@@ -1,0 +1,55 @@
+{
+  "name": "envhub",
+  "version": "0.0.1",
+  "description": "A free, open source Docker-based local development environment with a GUI for Laravel and modern JavaScript and Python stacks.",
+  "main": "main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/compose.test.js tests/ports.test.js tests/laravel.test.js tests/Portcheck.test.js tests/Store.test.js tests/Stacks.test.js tests/Pipeline.test.js tests/Hub.test.js tests/Folders.test.js tests/Edit.test.js tests/Links.test.js tests/Dbname.test.js tests/Credentials.test.js tests/Volumes.test.js tests/Envfile.test.js tests/Missing.test.js tests/Lan.test.js tests/Versions.test.js tests/Portable.test.js tests/Installer.test.js",
+    "dist": "electron-builder --win",
+    "art": "node scripts/make-installer-art.js"
+  },
+  "author": "envhub contributors",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "dev.envhub.app",
+    "productName": "envhub",
+    "files": [
+      "main/**/*",
+      "preload/**/*",
+      "renderer/**/*",
+      "build/icon.png",
+      "package.json",
+      "PLANNING.md",
+      "HANDOVER.md"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/installerSidebar.bmp",
+      "license": "LICENSE",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "envhub",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

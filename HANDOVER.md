@@ -1,0 +1,226 @@
+# envhub: handover
+
+Read this first. It tells you what the project is, how it is built, what works, what is unverified, and what to do next.
+
+## 1. What it is
+
+envhub is a free, open source (MIT) Electron desktop app, written in plain JavaScript (no framework, no bundler).
+It runs a local development environment in Docker through a GUI, so the user never types a terminal command.
+
+The user creates a project in three steps: **Name -> Setup (choose what is needed) -> Create** (animated progress with elapsed time, time left, and a Logs panel showing live Docker output).
+
+Supported project types:
+
+| Stack        | Always                                                  | Optional services                                               |
+| ------------ | ------------------------------------------------------- | --------------------------------------------------------------- |
+| Laravel      | nginx, PHP (built image)                                | MySQL, Redis, phpMyAdmin, Node/Vite, Mailpit                    |
+| NestJS       | Node                                                    | MySQL, PostgreSQL, MongoDB, Redis, phpMyAdmin, Adminer, Mailpit |
+| Next.js      | Node                                                    | same as NestJS                                                  |
+| Vue.js       | Node (Vite, port 5173)                                  | same as NestJS                                                  |
+| Nuxt.js      | Node (port 3000)                                        | same as NestJS                                                  |
+| Docker image | Any image from Docker Hub, the folder mounted at `/app` | same as NestJS (no Node/Vite)                                   |
+
+Rules: phpMyAdmin needs MySQL. Adminer needs MySQL or PostgreSQL. MongoDB has no web UI (use Compass).
+
+**Extra services (all stacks)**: under the tick boxes the user gets "Suggested for this project" buttons and a "+ Add more services" button. An extra service is any Docker Hub image with optional ports, environment variables (one `KEY=value` per line) and a start command. Up to 8 per project.
+
+**Docker Hub search**: the image box (Docker image stack, and every extra service row) searches Docker Hub while typing, then offers a tag list. On Create the image and tag are checked on Docker Hub, and a clear "not found" blocks the create.
+
+**Database and credentials**: the New project form and Edit services both have a "Database user", "Database name" and "Database password" field (shown only when MySQL, PostgreSQL or MongoDB is ticked), plus a "Redis password" field in Edit services. Defaults are `app` for user and name. Changing them keeps the data. Each project has its own app password; the admin account (`app` inside the container, MySQL root) keeps its name and password.
+
+**Credentials & .env**: each project row has a "Credentials" button, and the Logs card has two Copy buttons: "Copy .env (Docker)" (for the app running inside Docker, host = service name such as `mysql`) and "Copy .env (my computer)" (for the app or a DB tool on the PC, host = `localhost` + published port). The Connection panel is split the same way.
+
+**Status badge**: each project row shows Running / Partly running / Stopped, from the container states.
+
+## 2. The user and how to work with them
+
+- Windows 11, project at `C:\laragon\www\envhub`, Git Bash, Node 24, Docker 27.4. Not a terminal person.
+- Writes **Banglish** (Bengali in Latin script). Reply in Banglish, short.
+- **Send files one by one, never as a zip.** Give a table of file -> path, and a check command (`npm test` must print `tests N` / `pass N`). Past problems came from old files being left in place or pasted twice. Verify with `wc -l` or `grep` when in doubt.
+- This repo was built in a Linux sandbox with **no Docker daemon**. Real Docker behavior (pull/build/up output, ports, DB user creation) could only be checked by the user on their machine. UI was checked in headless Chromium (Playwright) with a mocked `window.envhub`.
+- The user confirmed the unit tests pass on their side ("test success"). Real Docker checks are still open (section 7).
+
+## 3. Run and test
+
+```
+npm install
+npm start        # opens the Electron window
+npm test         # node --test on an explicit file list in package.json
+```
+
+Current state: **208 tests, all pass** (`tests/Installer.test.js` covers install mode). The list in `package.json` includes `tests/DbName.test.js` and `tests/Credentials.test.js` (added with the database and credentials work).
+The renderer was also smoke tested in headless Chromium with a mocked `window.envhub`. Electron itself and real Docker were not run in the sandbox.
+When you add a test file, add it to the `test` script in `package.json` (the list is explicit, and it uses the real file name case, so it also works on Linux).
+
+## 4. Layout
+
+```
+main/
+  main.js                 Electron main process, IPC handlers, window, credentialsFor(spec)
+  compose/generate.js     Compose file generator (JSON, which is valid YAML) + validation + NAME_RE
+  docker/
+    hub.js                Docker Hub public API: searchImages, listTags, imageExists, listVersionTags / fetchVersionLists (no login)
+    exec.js               runDocker (execFile) and streamDocker (spawn, line by line)
+    check.js              Is Docker installed and running
+    containers.js         list/stop/restart/remove/logs, by envhub labels only
+    events.js             Docker events stream -> containers:changed
+    ports.js              dockerHostPorts: ports held by any container (docker inspect)
+    pipeline.js           setupProject: pull images, build PHP image, compose up, with progress + log
+    database.js           After start: create the database and the app user inside the DB containers (SQL / mongosh)
+  network/ports.js        isPortFree, findFreePort, resolveHostPorts, saved ports
+  stacks/
+    index.js              buildProject(spec, dbPassword) (adds extra services; sets Redis --requirepass), stackLabel, mainWebService, mainWebPort, CREATABLE_STACKS
+    laravel.js            Laravel stack + options
+    node.js               NODE_STACK_DEFS (nestjs, nextjs, vue, nuxt: label, port, command), options, optionServices()
+    docker.js             "Docker image" stack: any image, port (empty = 8000 + PORT variable), command, keepOpen
+    extras.js             Extra services added by hand: parse and validate ports, env, command; name from image (an edit keeps the old names)
+    links.js              Text for the Links & commands panel (pure)
+    edit.js               Edit services: describeForEdit, applyServiceEdit, diffServices (pure, nothing is written)
+    services.js           Shared service builders (mysql, postgres, mongodb, redis, mailpit, phpmyadmin, adminer), DB name/user/password rules (normalizeDbName, normalizeDbUser, normalizePassword, normalizeMail)
+    connection.js         Text for the Connection panel and the .env files (envFileText, connectionText, addressOf)
+  project/scaffold.js     Creates the project folder (scaffoldLaravel / scaffoldNode / scaffoldDocker)
+  project/folders.js      removeProjectFolder: deletes a project folder, only inside ~/envhub-projects
+  store/projects.js       Project specs (projects.json, mode 0600), port assignments; updateSpec drops undefined keys
+  store/secrets.js        Per-machine random DB password (userData/secrets.json)
+preload/preload.js        contextBridge allowlist of IPC channels and events (incl. projectEnv)
+renderer/                 index.html, app.js, styles.css (wizard, progress view, project list, Edit card, credentials menu)
+tests/                    node:test files
+scripts/port-check.js     Manual port diagnostic
+```
+
+## 5. How the main flows work
+
+**Install a fresh app (Setup step question "Do you want to install the app now?")**: the answer is `input.install` (default Yes).
+- **Yes**, Laravel / NestJS / Next.js / Vue / Nuxt: `main/project/installer.js` runs the official generator inside a throw-away container (`composer:2` for Laravel, `node:<ver>-alpine` for the rest) with the project folder bind-mounted at `/app`. Laravel and Vue/Nest build in a temp or sub folder and are copied up. No `server.js` / `public/index.php` placeholder is written. Afterwards `finishInstall` (scaffold.js) writes `docker-compose.yml`, `Dockerfile`, and **merges** the envhub lines into the generated `.env` (`mergeEnv`); the app's own `.gitignore` is kept. For Laravel with MySQL/PostgreSQL ticked it adds `SESSION_DRIVER=file`, `CACHE_STORE=file`, `QUEUE_CONNECTION=sync` until the user migrates.
+- **No**: the old behavior, placeholder `server.js` (Node stacks) or `public/index.php` (Laravel). The user edits it.
+- **Docker image stack (languages)**: no install question. A clean folder would have no code, and the default command (`python app.py`) would crash-loop, which real users hit. So the starter app is always written. `scaffoldDocker` still supports `install` (clean project), but main.js does not pass it.
+- **Ready wait** (`waitForApp` in `docker/pipeline.js`): Node projects run `npm install` in the container before the dev server starts, so after `compose up` envhub keeps the progress bar (animated, last log line shown) on an extra step "Installing packages and starting the app" until the app answers HTTP on its port. Docker's proxy accepts connections early, so it checks with an HTTP request, not a connect. A stopped container fails the start with its last log lines; after 15 minutes it ends as ok with `notReady`. The first `npm install` on a Windows bind mount can take 5 minutes or more.
+- **node_modules in a Docker volume** (NestJS, Next.js, Vue, Nuxt): decision made with the user, because many users will use envhub and `npm install` on a Windows bind mount took 5+ minutes. envhub's compose uses a labeled data volume `node-modules` at `/app/node_modules` (`stacks/node.js`, removed with the project like other data volumes); the portable `docker-compose.yml` uses a plain named volume `node_modules`. Cost: the project folder has no usable `node_modules`, so VS Code shows missing types. The project row has a **Packages for editor** button (`project:installPackages`) that runs `npm install` in a throw-away `node:<ver>-alpine` container into the folder, no Node needed on the PC. Those host files are for the editor only (Linux binaries); the app does not use them. Laravel's optional Node/Vite service still uses the shared folder.
+- **Linux file ownership** (`docker/hostuser.js`): on Linux Docker runs containers as root, so generated apps, `package-lock.json` and `.next` would belong to root. On Linux (and not as root) envhub passes `--user uid:gid` plus `HOME=/tmp`, `npm_config_cache`, `COMPOSER_HOME` to the installer, to `Packages for editor`, and sets `user:` on the Node service of its own compose (`svc.user` in `compose/generate.js`). New named volumes would be root-owned, so before each start `volumeOwnerCommands` creates them and runs a one-off `chown`. Windows and Mac return null and nothing changes. The portable `docker-compose.yml` still runs as root, because it must not carry a machine-specific uid. **Not run on a real Linux machine yet**: only the argument building is tested (`tests/Installer.test.js`).
+- **Existing project (import)**: Name step has "New project / Existing project". Existing = the user gives the full path of a folder they already have (typed, or the Browse dialog `project:pickFolder`). A path is used and not a `git clone` inside envhub, because clone asks for a password and envhub has no terminal. `project:detect` (`project/detect.js`, writes nothing) guesses the stack from `composer.json` (laravel/framework) or `package.json` (nuxt > next > @nestjs/core > vue, in that order) and the version from composer's `php` constraint or `.nvmrc` / `engines.node`; the user can change it in Setup. `project:import` adds the spec with `imported: true` and the folder as given: it is **never copied, never written to, and never deleted** (Delete only removes folders inside `~/envhub-projects`). No `docker-compose.yml`, `Dockerfile` or `.env` is written into it. For Laravel the PHP Dockerfile and nginx file go to `<app data>/projects/<name>/laravel` (`spec.supportDir`, used by `stacks/laravel.js`), and if `vendor/autoload.php` is missing `restoreLaravel` runs `composer install` in a container (in the container's /tmp, copied back, then makes `.env` from `.env.example` and an APP_KEY only when missing). **Other languages**: when no envhub stack matches, `detectLanguage` (detect.js) fills a Docker image project: Go (`go.mod`), Rust (`Cargo.toml`), Java (Maven `pom.xml` / Gradle), Python (`requirements.txt`, `pyproject.toml`, `manage.py` = Django, `app.py`/`main.py` with fastapi = uvicorn, Flask = port 5000), Ruby (`Gemfile`, Rails or rackup) and plain Node (`package.json` with `start` or `dev`). It guesses the image tag from `.python-version`, `go.mod`, `pom.xml`..., a port, and a start command that installs the packages first (`pip install -r requirements.txt && ...`, `npm install && ...`), plus a one-line note (for example Flask needs `app.run(host="0.0.0.0")`). All of it is shown in the Docker fields of Setup and can be changed, and the Docker image stack is selectable in import mode too (any image, any command). Guesses are untested on real projects. Not handled yet: the project's own DB host in its `.env` (use the Credentials & .env button), Docker-compose based projects, PHP without Laravel, .NET, and a git clone button.
+- **Python frameworks**: the Flask / FastAPI / Django list in Setup was built and checked on real Docker (Flask + MySQL, FastAPI, Django + PostgreSQL), then **taken out of the UI at the user's request** (they install packages with the start command, for example `pip install flask && python app.py`). The backend is still there and tested but nothing sends `framework` any more: `stacks/python-frameworks.js` (starter files, `frameworkCommand`), `scaffoldDocker({framework})`, and the `framework` branch in `project:create`. To bring it back, add a select to the Docker fields in `renderer/index.html` and send `framework` in `submitSetup`. What stays in use: `databaseEnv` (`MYSQL_*`, `POSTGRES_*`, `MONGODB_URL` set on the app service from the ticked databases, same user/name/password as Credentials); the user installs the driver (`pymysql cryptography`, `psycopg2-binary`, `pymongo`) in the start command or requirements.txt.
+- **Keep installed packages (optional volume)**: for a Docker image project whose image is a known language there is a checkbox "Keep installed ... packages" (on by default in New project, also in Edit services; saved as `spec.keepPackages`, off for older projects). `PACKAGE_RULES` in `stacks/docker.js` has one rule per language (the same names are in `PACKAGE_LANGUAGES` in `renderer/app.js`): Python (`/pkgs` + `PYTHONUSERBASE`, `PIP_USER`, `PATH`, works for any Python version), Node.js (`/app/node_modules`), Go (`/go`, `GOCACHE`), Rust (cargo registry + `/cache` with `CARGO_TARGET_DIR`), Java Maven (`/root/.m2`), Ruby (`/usr/local/bundle`). So an install done by hand with `docker exec -it envhub-<name>-app sh` survives a new container. Checked on real Docker (installed in one container, found in a new container with the same volumes): Python, Node.js, Go, Rust, Ruby. **Not checked: Maven.** Gradle, PHP and Java without Maven have no rule (nothing is kept). Limits: needs Save and apply to turn on or off, what the old container already installed is not moved, and the volumes go with the project. For Node.js the volume hides a `node_modules` folder that is already in the project folder.
+- **Data of extra services**: the built-in MySQL, PostgreSQL, MongoDB and Redis always had a data volume, but services added by hand ("+ Add more services") had none, so e.g. a MariaDB lost its data when the container was recreated. `DATA_PATHS` in `stacks/extras.js` maps known images (mariadb, mysql, percona, mongo, redis, valkey, postgres/postgis (path changes at 18), rabbitmq, elasticsearch, opensearch, meilisearch, minio, clickhouse, cassandra, couchdb, neo4j, influxdb, mssql) to their data folder, and `toService` adds a labeled volume `data` there (removed with the project, or kept with "keep data"). Unknown images get no volume. Checked on real Docker with MariaDB (a table written in one container was there in a new container). Existing projects: the volume is added at the next Save and apply, and data that sat in the old container's anonymous volume is not moved. The list is only by image name, so a custom image with another data path is not covered.
+- **Projects folder setting** (`store/settings.js`, `<app data>/settings.json`): the New project step shows "New projects are saved in: <folder> [Change folder...] [Use the default]" (default `~/envhub-projects`). The choice is checked (absolute, writable, not envhub's own data folder) and earlier folders are remembered (`projectDirs`), so a project made in an older folder can still be deleted with its files. Delete never removes the folder of an imported project. `Write .env` works for imported projects and old folders. Existing projects never move.
+- **Installer** (`npm run dist`, electron-builder NSIS): a wizard (not one click) with a page to choose the install folder, a licence page (LICENSE), desktop and Start menu shortcuts, run after finish, per user, app data kept on uninstall, a sidebar picture and an icon. The pictures are drawn by `scripts/make-installer-art.js` (`npm run art`) into `build/` with no extra packages. Built and checked here: `dist/envhub Setup 0.0.1.exe` (about 80 MB). The installer pages themselves were not clicked through. On Windows the build needs symlink rights for the `winCodeSign` download: turn on Windows Developer Mode (or run the terminal as administrator) once, otherwise it fails with "Cannot create symbolic link"; building with `-c.win.signAndEditExecutable=false` works but leaves the Electron icon on the exe. The exe is not code signed, so Windows SmartScreen will warn. The projects folder is not asked during install, it is chosen in the app.
+- **Application menu** (`main/menu.js` builds the template, `setupMenu()` in `main.js` gives it the actions, so menu.js knows nothing about Docker): File (New project, Open existing project, Projects folder..., Open projects folder, Open data folder, Quit), Edit, View, Tools (**Sync** with three parts, Edit versions.json), Window, Help (Planning, Handover notes, About). Sync 1 = `Export projects...` / `Import projects...` (`store/sync.js`, pure: one JSON file `envhub-projects`, no passwords, no ports, the built in demo left out; import adds only projects with a valid name and stack, a free name, and a folder that exists on this computer, and tells what was skipped and why; code is not copied). Sync 2 = Refresh Docker state (F5, sends `menu:action` `refresh` to the window). Sync 3 = Refresh version lists, `registry.refresh(..., force = true)`, then the window reloads its lists. Menu clicks that need the window go through the allowlisted event `menu:action` (`new-project`, `existing-project`, `refresh`, `projects-dir-changed`, `versions-refreshed`). Planning and Handover open in `main/docview.js`: a read-only window with no preload and JavaScript off, Markdown turned into escaped HTML (headings, lists, tables, code); `PLANNING.md` and `HANDOVER.md` are in the packaged `files`. Checked in real Electron: the menu builds and the Planning window renders (screenshot). The menu items themselves were not clicked. Not built: Help > Check for updates (needs a GitHub repo for releases). Note for tests that start Electron from a script: VS Code sets `ELECTRON_RUN_AS_NODE`, run `env -u ELECTRON_RUN_AS_NODE electron ...`.
+- **Unique ports**: ports are chosen at start from: not held by any Docker container, not saved by another project, and not claimed by a project that is starting at the same moment (`startingPorts` in main.js). A busy port moves to the next free one and the UI says so.
+- The generated app lives in the project root (the folder mounted at `/app`), not in an `app/` sub folder.
+- If the generator fails, or leaves no `package.json` / `composer.json` (a generator can exit 0 after an unanswered prompt), the folder is deleted and the create fails with the last output lines. Install output streams to the Logs panel as `project:log` under the project name.
+- Commands are in `INSTALL_COMMANDS`; each is non-interactive (`CI=true`, flags like `--yes`, `--default`, `--template minimal`). Generators change their flags often: if one stops working, fix its line there. Checked on real Docker in this session: Laravel (about 3 min, built in the container's /tmp because composer on a Windows bind mount was far too slow), NestJS, Next.js, Vue, Nuxt.
+
+**Create** (`project:create`): validates name (`NAME_RE`: lowercase, digits, dashes, starts with a letter), stack, version, options, and the database name, user and password (`normalizeDbName`, `normalizeDbUser`, `normalizePassword`) before any folder work. Scaffolds the folder, saves a spec, returns a summary. Nothing starts yet.
+
+**Start** (`project:start`), then the renderer shows progress:
+
+1. Build the config from the spec and apply saved host ports.
+2. If **every** container is running, return `alreadyRunning`. A container that is restarting or exited does not count, so Start repairs the project and `compose up -d` recreates anything whose setup changed.
+3. Reserve ports used by other envhub projects and by **any Docker container** (`dockerHostPorts`, running or stopped, excluding this project's own).
+4. `resolveHostPorts`: keep the wanted port if free, else take a new free one. Result lists `changed` (with who holds the old port).
+5. Write `userData/projects/<name>/compose.json`.
+6. `setupProject`: `docker pull` missing images (real layer tracker), `docker compose build` for the PHP image (BuildKit step numbers), `docker compose up -d`.
+7. `ensureDatabases` (`main/docker/database.js`): for MySQL and PostgreSQL, creates the named database (if not `app`), then creates or updates the app user and gives it the database. MongoDB gets the app user through `mongosh` as root. Each step retries up to 40 times, 3 s apart, because DB servers start slowly. A failure is logged and listed in `res.dbErrors`, but the containers keep running.
+8. On success, save the assigned ports and the host ports for the next start.
+
+**Progress and logs**: main sends `project:progress` `{name, steps, step, fraction, detail}` and `project:log` `{name, lines}` (batched every 100 ms). The renderer (`createProgressView`) draws the bar, step list, elapsed time, and a time-left estimate only once real progress is known (>= 15% and >= 10 s). The Logs button toggles a terminal-style panel (last 500 lines).
+
+**Delete** (`project:delete`): two-click "Confirm delete" in the UI (not `confirm()`, which breaks input focus in Electron on Windows). Removes containers by label (`docker rm -f -v`), the image `envhub-<name>-php`, the network, the generated compose folder, the spec, **and the project folder with the user's files** (`removeProjectFolder`). The folder is deleted only when it is a subfolder of `~/envhub-projects`. If Windows locks a file, the project is still removed and the UI tells the user to delete the folder by hand.
+
+**Name check** (`project:checkName`): on step 1 of the form, a name that already has a project, or a leftover folder in `~/envhub-projects`, is refused with a clear message. `project:create` still refuses an existing folder (it never writes into a folder that is there).
+
+**Edit services** (`project:details`, `project:update`): the "Edit services" button on a project row (only for stacks that can be created, not the demo project) opens a card with the tick boxes of the stack, the extra service rows, the database fields (user, name, password, shown for MySQL / PostgreSQL / MongoDB) and the Redis password field. Values are filled from the saved spec. `project:update` validates everything with `applyServiceEdit` + `validateProject` before it saves (`projects.updateSpec`), and returns `{ changes: {added, removed, changed}, details }`. It never starts anything. Undefined input = keep, empty = clear. **Save and apply** then calls `project:start` with `{ apply: true }`: that skips the `alreadyRunning` shortcut, keeps the project's own ports (`owned` in `resolveHostPorts`), and `compose up -d --remove-orphans` removes the containers of removed services. An extra service row carries its saved name, so removing one service does not rename (and replace) the others. The renderer never sends a name the project did not have (ignored in `normalizeExtraServices`).
+
+**Credentials & .env** (`project:connection`, `project:env`): `project:connection` returns the Connection text (sections: "APP INSIDE DOCKER: .env file", "APP ON THIS COMPUTER: .env file", "DB TOOL ON THIS COMPUTER", "WEB PAGES", "EXTRA SERVICES"). `project:env(name, target)` returns one `.env` file for `docker` or `host` (the Copy buttons). Values with spaces, `#`, quotes or `$` are quoted. For Laravel the keys are `DB_CONNECTION / DB_HOST / DB_PORT / DB_DATABASE / DB_USERNAME / DB_PASSWORD`, `REDIS_*`, `MAIL_*`; for other stacks also `MYSQL_URL`, `POSTGRES_URL`, `DATABASE_URL`, `MONGODB_URL`, `REDIS_URL`. Redis has no password line when none is set (`REDIS_PASSWORD=null`).
+
+**Redis password**: stored as `spec.redisPassword`. `withRedisPassword` (in `stacks/index.js`) adds `command: ['redis-server', '--requirepass', ...]` to the redis service. Changing it needs Save and apply (the container is recreated).
+
+**Links & commands** (`project:links`, `project:openPort`): the "Links & commands" button on every project row opens a card with each service (image, start command, a `docker exec -it envhub-<n>-<service> sh` line, one Open button per published port, Copy buttons) and the Docker commands for the whole project (logs, list, stop, up, down) built from the project's `compose.json` path. `project:openPort` takes a service name and a container port, looks the host port up in `knownPorts` and opens `http://localhost:<host>`, so the renderer can never pass a URL. Open is disabled while the project is not running. The card refreshes itself on `containers:changed`. After Save or Save and apply (Edit services), `refreshAfterEdit` reloads the project list, the container list and this card, and does it once more after 2.5 s when the containers have settled.
+
+**Docker missing guidance**: the Docker card explains three options: Docker Desktop (includes the CLI and engine), Rancher Desktop (free, uses dockerd/moby), or WSL2 with Docker. A separate Docker CLI alone is not enough, because the engine must run.
+
+**Hub** (`hub:search`, `hub:tags`, `hub:check`): the renderer sends text only. Main calls `https://hub.docker.com/v2/...` and returns a clean list. `hub:check` returns true, false or null (null = other registry such as `ghcr.io/...`, or Docker Hub unreachable). Only false blocks.
+
+**New project card**: it hides after a Delete and when the user clicks Done. The "New project" button in the Projects card shows it again.
+
+**Open** (`project:open`): renderer sends only a service name. Main maps it through `OPENABLE` (`nginx:80, node:3000, phpmyadmin:80, adminer:8080, mailpit:8025`), or, for the project's main service (`mainWebService`), through `mainWebPort(spec)` (Vue 5173, Docker image = its port), and builds `http://localhost:<hostPort>`. The renderer can never pass a URL.
+
+## 6. Decisions you must keep
+
+- **Security**: `contextIsolation` on, `sandbox` on, `nodeIntegration` off. The `handle()` wrapper rejects senders that are not `file://`. Preload exposes an allowlist only. CSP has `style-src 'self'`, so **no inline `style` attributes in HTML** (setting `el.style.width` from JS is fine). Classes only for the new UI (`.env-menu*`, `.status*`). See `SECURITY.md`.
+- **Docker is only called with argument arrays** (`execFile` / `spawn`), never through a shell string. The SQL in `database.js` is built from names and passwords that were already checked, with escape helpers (`sqlString`, `pgString`, `jsString`) as a second guard.
+- `docker compose up` always uses `--remove-orphans`. It is safe because the compose project name is `envhub-<n>`, so only this project's containers are touched.
+- Only containers labeled `com.envhub.managed=true` are listed or changed. Labels: `com.envhub.managed/project/service/stack`.
+- Ports bind to `127.0.0.1`.
+- **Docker image stack keeps the container open** (`keepOpen` -> `tty` + `stdin_open`, like `docker run -it`). Images whose default command is a shell or interpreter (golang, python, node) exit at once otherwise, and `restart: unless-stopped` loops. Without a start command the container just stays open. Images with their own server (nginx) are unaffected because their command is not replaced.
+- Extra service start command is split on spaces and passed as an array (no `sh -c`), so it is added to the image's own entry point (MinIO needs this).
+- Env keys may contain `.` and `-` (Elasticsearch uses `discovery.type`).
+- Host port for a container port under 1024 is shown as port + 8000 (80 -> 8080). Clashes are still moved to a free port at start.
+- New projects live in `~/envhub-projects/<name>` (outside OneDrive, not in Laragon). Compose files live in `userData/projects/<name>`.
+- **Database names and users**: name rule `^[a-z][a-z0-9_]{0,40}$`. User rule the same, and reserved names (`root`, `postgres`, `admin`, `mysql`, `mongodb`, `envhub`) are refused. The admin account is always `app` inside the container and is never renamed. Renaming creates the new database and user on the running server (`CREATE DATABASE`, `CREATE USER IF NOT EXISTS`, `ALTER USER`, `GRANT`, `ALTER DATABASE OWNER`), so data stays. The old user and old database are not removed.
+- **Passwords**: rule `^[A-Za-z0-9_.-]{4,64}$`. Empty = use the default (per-machine secret). Stored in `projects.json` (mode 0600), as a local-development choice. The UI says so.
+- The root password never changes after the first start (the container was created with the machine password).
+- **External mail** is removed from the UI (Edit services and New project). The backend code (`normalizeMail`, `spec.mail`, the external branch in `.env`, the Mail line in Connection) is still there but dormant. Mailpit is the mail service. Delete the backend code only when the user asks.
+- `isPortFree` = nothing listening (connect test) AND a bind test on 127.0.0.1. The connect test ignores **self-connections**: on Windows, ephemeral client ports are sequential, so probing port N+1 could connect to itself and look "busy" (`socket.localPort !== port`). This caused the "No free port found" bug. Do not remove that check.
+
+## 7. Unverified on real Docker
+
+These parts could not be run in the sandbox. Treat them as unproven until the user reports:
+
+- **DB user creation** on a real server: MySQL `CREATE USER IF NOT EXISTS` + `ALTER USER` + `GRANT`, PostgreSQL `DO $$ ... CREATE ROLE` + `ALTER ROLE` + `ALTER DATABASE OWNER`. Check the Logs for `Setting up the app user <name>` and `... is ready in <service>`. Errors show as `Could not set up ...`.
+- **MongoDB app user**: `mongosh` must exist in the `mongo:7` image. It was assumed, not checked. If the Logs show `mongosh: not found`, switch to `mongo` shell or the Node driver.
+- **Redis `--requirepass`** on Save and apply: confirm the container is recreated and `redis-cli -a <pass> ping` answers.
+- The two **Copy .env** buttons, the badge, the Credentials menu, and the Docker-missing guidance on the user's Windows machine.
+- Parsing of real `docker pull` layer lines and BuildKit step lines (patterns in `pipeline.js`: `LAYER_LINE`, `BUILD_STEP`). If the progress bar stays stuck or indeterminate, look here first.
+- `docker compose up -d` output streaming (uses `COMPOSE_PROGRESS=plain`).
+- **Docker Hub auto versions**: `listVersionTags` uses `/v2/repositories/library/<image>/tags?page_size=100&ordering=last_updated&name=<filter>` and follows `next`. Only tested with mocked replies. On the user's machine check that `<app data>/versions-cache.json` appears after the first start and that the dropdowns show the newest PHP/Node/MySQL. If a list is missing, the console shows `Docker Hub versions: <key>: ...`. MySQL 9.x minor tags (9.0, 9.1, ...) may all appear in the dropdown.
+- Docker Hub endpoints (`/v2/search/repositories/`, `/v2/repositories/<ns>/<name>/tags`, `/v2/repositories/<ns>/<name>/tags/<tag>`) were never called from the sandbox (network blocked). Field names follow the public docs. If valid images show "not found", look at `imageExists` in `main/docker/hub.js` first.
+- Delete of a folder on Windows with locked files (`rmSync` with retries).
+- **Save and apply on a running project** (Edit services): Docker recreates only the changed services, removes the removed ones (`--remove-orphans`), and the project keeps its ports.
+- The Docker image stack with a real image (the golang restart loop was fixed with `keepOpen`, confirmed only by reading the log).
+- The Electron window itself on the user's machine. The compose files of all three stacks pass `docker compose config -q`.
+
+## 8. Known limits
+
+- Services can be edited later (Edit services), but the stack, the version and the Docker image stack's main image, port and command cannot.
+- The root / admin name (`app` inside the container) cannot be renamed. Only the app user and the database name change.
+- A plain **Start** on a project that is already fully running does nothing (`alreadyRunning`). After Save (without apply) on a running project the user must use Save and apply.
+- Start (not apply) on a project with some containers running still sees its own running ports as busy. Not fixed, only apply uses `owned`.
+- Extra services have no volumes, and neither do the built-in databases. Data is lost on Delete, and on recreate of a DB container.
+- Extra service passwords and the DB passwords are plain text in `projects.json` (mode 0600). Local development only.
+- Old database users and databases stay after a rename.
+- The suggestion lists (`SUGGEST_BY_STACK`, `SUGGEST_BY_IMAGE`, `CATALOG` in `renderer/app.js`) are hand written. Docker Hub cannot say what a project needs.
+- MySQL and PostgreSQL data has **no named volume**. Data is lost when the project is deleted or recreated.
+- Projects are **placeholders**. The real code must be put in the project folder by the user. A Docker image project starts with only a `README.md`.
+- Delete now removes the project folder. Folders left by older versions (before this change) stay until the user deletes them, and block that name on the check.
+- First start can take minutes (image downloads, PHP build).
+- Old folders in `Documents\envhub\projects` from early versions remain and are unused.
+- Phase plan from the user's PDF (phase 0 foundation, 1 Docker check, 2 compose engine, 3 Laravel, 4 Mailpit/Adminer, 5 .env/JSON store and more). **The PDF was never actually read**, so later phases are guessed. Ask the user for the plan if it matters.
+
+## 9. Good next steps
+
+1. Get real Docker feedback from the user: DB user creation, MongoDB `mongosh`, Redis password, progress parsing, Logs panel.
+2. Named volumes for database data, with a "delete data too" option on Delete.
+3. A `.env` helper that writes the Connection lines into the project folder (the Copy buttons are the first step).
+4. Done: "Install a fresh app" (section 5). Open follow ups: a Create step that waits for the Laravel app too, and a clean start command for language projects.
+5. Packaging (electron-builder) once the app is stable.
+6. Move the stack lists (versions, options, notes) out of `renderer/app.js` into one registry that main sends to the renderer, so adding a stack touches one file.
+7. Hub search for extra services is there, but the extra service form has no "find ports from the image" step. The image's `EXPOSE` ports could be read after a pull.
+8. Decide whether to delete the dormant external-mail backend code.
+9. **Modern UI redesign (planned, not started, the user wants it later, not now).** The full plan is in `PLANNING.md` ("Planned: modern UI redesign"): sidebar, project cards, project detail tabs, stack cards in the wizard, light/dark theme, toasts. First split `renderer/app.js` into modules under `renderer/views/`, and keep new UI code simple until then.
+
+## 10. Git
+
+Branch history is linear. Commit messages end with:
+
+```
+Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01KnbAByKaaRXiXDoryHdGaG
+```
+
+## Adding things
+
+- **Version** (PHP, Node, MySQL, PostgreSQL, MongoDB, Redis): **new versions come from Docker Hub automatically** (the user's choice). At start `registry.refresh` (main/registry/versions.js) applies `<app data>/versions-cache.json` at once, and when it is older than 24 h `fetchVersionLists` (main/docker/hub.js) reads the newest tags of `php` (`X.Y-fpm`), `node` (even majors, `X-alpine`), `mysql` (`X.Y`), `postgres`, `mongo`, `redis` (plain majors): 3 pages of 100 tags each. Rules: a Docker Hub version is only added when it is not older than the oldest built in one, and it **never changes a default** (defaults come only from `main/config/versions.json`). A failed list keeps its cached versions, and with no network the built in and cached lists are used. `registry:get` waits at most 2.5 s for a running refresh, so the form never hangs. To pin or add a version by hand: add it to `main/config/versions.json` (built in), or the user adds it in `<app data>/versions.json` with the "Versions file" button, no code change. All sources are merged, a version must be digits and dots (`8.4`). A project without a saved version keeps the old one (`LEGACY` in `main/registry/versions.js`), so changing a default never changes an existing database. The dropdowns are filled from the registry (`registry:get`).
+- **Node based stack** (Svelte, Astro...): one line in `NODE_STACK_DEFS` in `main/stacks/node.js` (label, port, command), the name in `STACKS` in `main/compose/generate.js`, an `<option>` in `renderer/index.html`, and entries in `VERSIONS`, `STACK_OPTIONS`, `DEFAULT_OPTIONS`, `OPTIONS_LEGEND`, `OPTIONS_NOTE` in `renderer/app.js`.
+- **Any other language**: use the "Docker image" stack in the New project form (image from Docker Hub, port, optional command). No code change needed.
+- **Suggestion button for an extra service**: add an entry to `CATALOG` in `renderer/app.js`, and put its id in `SUGGEST_BY_STACK` or `SUGGEST_BY_IMAGE`. No backend change.
+- **Service** (MariaDB, MinIO...): a function in `main/stacks/services.js`, a line in `optionServices()` and `OPTION_KEYS` in `main/stacks/node.js`, a checkbox in `renderer/index.html`, and `OPTION_KEYS` / `NODE_SERVICES` in `renderer/app.js`. For a database service, also add its SQL or CLI step to `main/docker/database.js` if it needs an app user.

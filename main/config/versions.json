@@ -1,0 +1,8 @@
+{
+  "php":      { "default": "8.3", "versions": ["8.3", "8.2", "8.1"] },
+  "node":     { "default": "22",  "versions": ["22", "20"] },
+  "mysql":    { "default": "8.0", "versions": ["8.4", "8.0"] },
+  "postgres": { "default": "16",  "versions": ["17", "16", "15"] },
+  "mongodb":  { "default": "7",   "versions": ["8", "7", "6"] },
+  "redis":    { "default": "7",   "versions": ["7", "6"] }
+}
