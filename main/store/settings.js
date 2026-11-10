@@ -39,7 +39,7 @@ function knownProjectDirs(defaultDir) {
 }
 
 // Checks the folder the user chose and saves it. It must be an absolute path that exists or can be made,
-// must be writable, and must not be envhub's own data folder. Returns the resolved path.
+// must be writable, and must not be ProjectDockHub's own data folder. Returns the resolved path.
 function setProjectsDir(folder, { dataDir } = {}) {
   if (typeof folder !== 'string' || !path.isAbsolute(folder)) {
     throw new Error('Choose a full folder path, like C:/Projects');
@@ -47,7 +47,7 @@ function setProjectsDir(folder, { dataDir } = {}) {
   const dir = path.resolve(folder);
   if (dataDir) {
     const own = path.resolve(dataDir);
-    if (dir === own || dir.startsWith(own + path.sep)) throw new Error('Choose another folder: this one belongs to envhub itself');
+    if (dir === own || dir.startsWith(own + path.sep)) throw new Error('Choose another folder: this one belongs to ProjectDockHub itself');
   }
   try {
     fs.mkdirSync(dir, { recursive: true });

@@ -42,7 +42,7 @@ function renderStatus(status) {
         'https://www.docker.com/products/docker-desktop/',
         'On Windows, if Docker Desktop asks to turn on WSL 2, accept it and restart the computer when asked.',
         'Do not want Docker Desktop? Install Rancher Desktop (free): https://rancherdesktop.io/',
-        'In Rancher Desktop, set Container Engine to "dockerd (moby)". It gives the docker and docker compose commands that envhub needs.',
+        'In Rancher Desktop, set Container Engine to "dockerd (moby)". It gives the docker and docker compose commands that ProjectDockHub needs.',
         'Open Docker Desktop (or Rancher Desktop) and wait until it says "running", then click Check again.',
       ]);
     } else {
@@ -98,6 +98,34 @@ function paintDockerMark() {
   el.dockerArt.hidden = el.dockerMark.dataset.state !== 'bad';
 }
 
+// What the Docker card showed last (reason and server version), so a check that finds the same thing changes nothing.
+let dockerKey = '';
+let dockerCheckBusy = false;
+const DOCKER_RECHECK_MS = 8000;
+
+// Looks at Docker again without the "Checking..." flicker. The card changes only when something changed:
+// Docker Desktop was closed (or opened), or the Docker service stopped. Then the projects are read again too.
+async function quietCheckDocker() {
+  if (dockerCheckBusy || !dockerKey) return;
+  dockerCheckBusy = true;
+  try {
+    const status = await window.envhub.checkDocker();
+    const key = `${status.reason}|${status.serverVersion}`;
+    if (key !== dockerKey) {
+      dockerKey = key;
+      clearGuidance();
+      renderStatus(status);
+      paintDockerMark();
+      loadProjects();
+      scheduleRefreshContainers();
+    }
+  } catch (err) {
+    // The next check tries again.
+  } finally {
+    dockerCheckBusy = false;
+  }
+}
+
 async function checkDocker() {
   el.button.disabled = true;
   el.dockerMark.dataset.state = 'checking';
@@ -107,10 +135,14 @@ async function checkDocker() {
   clearGuidance();
 
   try {
-    renderStatus(await window.envhub.checkDocker());
+    const status = await window.envhub.checkDocker();
+    dockerKey = `${status.reason}|${status.serverVersion}`;
+    renderStatus(status);
     paintDockerMark();
   } catch (err) {
+    dockerKey = 'error|';
     renderStatus({ reason: 'error', running: false, platform: '' });
+    paintDockerMark();
   } finally {
     el.button.disabled = false;
   }
@@ -283,6 +315,11 @@ function createProgressView(root) {
 }
 
 // Starts a project and shows the progress in `view`. begin() must have been called already.
+// The words Docker uses when its service is off (Windows pipe, Linux socket, the CLI message).
+function dockerIsDown(text) {
+  return /dockerDesktopLinuxEngine|docker_engine|Cannot connect to the Docker daemon|error during connect|Is the docker daemon running|pipe.*(cannot find|not found)/i.test(String(text || ''));
+}
+
 async function runStart(name, view, options) {
   progressViews.set(name, view);
 
@@ -296,7 +333,10 @@ async function runStart(name, view, options) {
   }
 
   if (res.ok === false) {
-    view.finish(false, `Could not start ${name}`, lastLines(res.stderr) || 'Unknown error');
+    const text = lastLines(res.stderr) || 'Unknown error';
+    const down = dockerIsDown(res.stderr);
+    view.finish(false, `Could not start ${name}`, down ? 'Docker is not running. Open Docker Desktop, wait until it says it is running, then try again.' : text);
+    if (down) quietCheckDocker();
   } else if (res.alreadyRunning) {
     view.finish(true, `${name} is already running`, '');
   } else {
@@ -795,7 +835,7 @@ function renderCredentials(name, data) {
 
   // .env, for the app
   if (data.env.docker.trim() || data.env.host.trim()) {
-    const section = credSection('.env file', 'Paste these lines into the .env of your app, or let envhub write them into the project folder (an old .env is backed up first).');
+    const section = credSection('.env file', 'Paste these lines into the .env of your app, or let ProjectDockHub write them into the project folder (an old .env is backed up first).');
     let target = 'docker';
     const seg = makeElement('div', 'seg');
     seg.setAttribute('role', 'group');
@@ -2048,7 +2088,7 @@ function say(text) {
 async function openVersionsFile() {
   try {
     const res = await window.envhub.openVersionsFile();
-    say(`Opened ${res.file}. Add versions, save it, then restart envhub.`);
+    say(`Opened ${res.file}. Add versions, save it, then restart ProjectDockHub.`);
   } catch (err) {
     say(`Could not open the versions file: ${ipcMessage(err)}`);
   }
@@ -2174,7 +2214,59 @@ function showStage(stage) {
 const INSTALL_LABELS = { laravel: 'Laravel', nestjs: 'NestJS', nextjs: 'Next.js', vue: 'Vue.js', nuxt: 'Nuxt.js' };
 
 // Fills the version list and shows the services that fit the chosen stack.
+// The stack choice as cards. The <select id="new-stack"> stays (hidden) and is still the value every other
+// part of the form reads; a card only sets it and sends the same "change" event a select would.
+const STACK_INFO = {
+  laravel: 'PHP, nginx, Composer',
+  nestjs: 'Node.js API framework',
+  nextjs: 'React with server rendering',
+  vue: 'Vite and Vue single page app',
+  nuxt: 'Vue with server rendering',
+  docker: 'Any image: Python, Go, Rust, Java...',
+};
+
+function renderStackCards() {
+  const box = byId('stack-cards');
+  box.textContent = '';
+  for (const option of el.newStack.options) {
+    if (option.hidden) continue;
+    const value = option.value;
+    const mark = STACK_MARKS[value] || { text: value.slice(0, 2), color: '#64748B' };
+    const card = makeElement('button', 'stack-card');
+    card.type = 'button';
+    card.dataset.value = value;
+    card.setAttribute('role', 'radio');
+    card.style.setProperty('--brand', mark.color);
+    const badge = makeElement('span', 'stack-mark');
+    badge.textContent = mark.text;
+    badge.setAttribute('aria-hidden', 'true');
+    const text = makeElement('span', 'stack-text');
+    const title = makeElement('strong', '');
+    title.textContent = value === 'docker' ? 'Docker image' : option.textContent;
+    const note = makeElement('span', '');
+    note.textContent = STACK_INFO[value] || '';
+    text.append(title, note);
+    card.append(badge, text);
+    card.addEventListener('click', () => {
+      if (el.newStack.value === value) return;
+      el.newStack.value = value;
+      el.newStack.dispatchEvent(new Event('change'));
+    });
+    box.appendChild(card);
+  }
+  paintStackCards();
+}
+
+function paintStackCards() {
+  for (const card of document.querySelectorAll('#stack-cards .stack-card')) {
+    const on = card.dataset.value === el.newStack.value;
+    card.classList.toggle('on', on);
+    card.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+}
+
 function syncStackForm() {
+  paintStackCards();
   const stack = el.newStack.value;
 
   const isDocker = stack === 'docker';
@@ -3253,7 +3345,7 @@ async function refreshContainers() {
     const items = await window.envhub.listContainers();
     if (items.length === 0) {
       const li = makeElement('li', 'muted');
-      li.textContent = 'No envhub containers yet. Start a project above.';
+      li.textContent = 'No ProjectDockHub containers yet. Start a project above.';
       el.containerList.appendChild(li);
       return;
     }
@@ -3399,6 +3491,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   el.dockerImage.addEventListener('input', syncPythonRow);
   el.dockerTag.addEventListener('change', syncPythonRow);
   el.newStack.addEventListener('change', syncStackForm);
+  renderStackCards();
   createImagePicker({
     input: el.dockerImage,
     tagSelect: el.dockerTag,
@@ -3443,7 +3536,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.envhub.onContainersChanged(() => {
     scheduleRefreshContainers();
     scheduleLinksRefresh();
-    // Keeps the On / Stopped badge right when a container starts or stops outside envhub too.
+    // Keeps the On / Stopped badge right when a container starts or stops outside ProjectDockHub too.
     loadProjects();
   });
   // Clicks in the application menu (File, Tools > Sync) arrive here.
@@ -3489,6 +3582,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   checkDocker();
+  // Docker can be closed and opened while ProjectDockHub runs, so the card keeps looking: every few seconds while the
+  // window is visible, when the window gets the focus, and when the main process says the Docker stream ended.
+  setInterval(() => {
+    if (document.visibilityState === 'visible') quietCheckDocker();
+  }, DOCKER_RECHECK_MS);
+  window.addEventListener('focus', quietCheckDocker);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') quietCheckDocker();
+  });
+  window.envhub.onDockerState(() => quietCheckDocker());
   renderProjectsLoading();
   loadProjects();
   refreshContainers();

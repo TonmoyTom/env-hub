@@ -7,7 +7,7 @@ const { Menu } = require('electron');
 //   actions.sendToWindow(name)   tells the window to do something (new-project, existing-project, refresh...)
 //   actions.chooseProjectsDir()  File > Projects folder...
 //   actions.openProjectsDir()    File > Open projects folder
-//   actions.openDataDir()        File > Open envhub data folder
+//   actions.openDataDir()        File > Open ProjectDockHub data folder
 //   actions.exportProjects()     Tools > Sync > Export projects...
 //   actions.importProjects()     Tools > Sync > Import projects...
 //   actions.refreshDocker()      Tools > Sync > Refresh Docker state
@@ -22,10 +22,10 @@ function buildTemplate(actions, isMac = process.platform === 'darwin') {
     { type: 'separator' },
     { label: 'Projects folder...', click: () => actions.chooseProjectsDir() },
     { label: 'Open projects folder', click: () => actions.openProjectsDir() },
-    { label: 'Open envhub data folder', click: () => actions.openDataDir() },
+    { label: 'Open ProjectDockHub data folder', click: () => actions.openDataDir() },
     { type: 'separator' },
-    { label: 'Close window (envhub keeps running in the tray)', role: 'close' },
-    { label: isMac ? 'Quit envhub' : 'Exit', role: 'quit' },
+    { label: 'Close window (ProjectDockHub keeps running in the tray)', role: 'close' },
+    { label: isMac ? 'Quit ProjectDockHub' : 'Exit', role: 'quit' },
   ];
 
   const tools = [
@@ -47,7 +47,7 @@ function buildTemplate(actions, isMac = process.platform === 'darwin') {
     { label: 'Planning', click: () => actions.showDoc('planning') },
     { label: 'Handover notes', click: () => actions.showDoc('handover') },
     { type: 'separator' },
-    { label: 'About envhub', click: () => actions.about() },
+    { label: 'About ProjectDockHub', click: () => actions.about() },
   ];
 
   return [

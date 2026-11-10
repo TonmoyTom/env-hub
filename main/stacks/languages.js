@@ -14,7 +14,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
         self.end_headers()
-        self.wfile.write(b"<h1>envhub is running</h1><p>Python placeholder</p>")
+        self.wfile.write(b"<h1>ProjectDockHub is running</h1><p>Python placeholder</p>")
 
 
 HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8000"))), Handler).serve_forever()
@@ -34,7 +34,7 @@ func main() {
 		port = "8000"
 	}
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "<h1>envhub is running</h1><p>Go placeholder</p>")
+		fmt.Fprint(w, "<h1>ProjectDockHub is running</h1><p>Go placeholder</p>")
 	})
 	http.ListenAndServe("0.0.0.0:"+port, nil)
 }
@@ -50,7 +50,7 @@ fn main() {
         if let Ok(mut s) = stream {
             let mut buf = [0u8; 1024];
             let _ = s.read(&mut buf);
-            let body = "<h1>envhub is running</h1><p>Rust placeholder</p>";
+            let body = "<h1>ProjectDockHub is running</h1><p>Rust placeholder</p>";
             let resp = format!(
                 "HTTP/1.1 200 OK\\r\\nContent-Type: text/html\\r\\nContent-Length: {}\\r\\nConnection: close\\r\\n\\r\\n{}",
                 body.len(),
@@ -71,7 +71,7 @@ public class Main {
         int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "8000"));
         HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
         server.createContext("/", exchange -> {
-            byte[] body = "<h1>envhub is running</h1><p>Java placeholder</p>".getBytes();
+            byte[] body = "<h1>ProjectDockHub is running</h1><p>Java placeholder</p>".getBytes();
             exchange.getResponseHeaders().add("Content-Type", "text/html");
             exchange.sendResponseHeaders(200, body.length);
             try (OutputStream os = exchange.getResponseBody()) {

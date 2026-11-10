@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-// The versions envhub offers for PHP, Node and the database services. Three sources are merged:
+// The versions ProjectDockHub offers for PHP, Node and the database services. Three sources are merged:
 //  1. Built in list: config/versions.json (it also decides the defaults).
 //  2. Docker Hub, fetched in the background and kept in <app data>/versions-cache.json (refreshed once a day).
 //     It only adds versions that are not older than the oldest built in one, and never changes a default.

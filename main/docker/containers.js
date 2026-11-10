@@ -90,7 +90,7 @@ async function projectLogs(projectName, lines = 500) {
   return chunks.join('\n');
 }
 
-// Named data volumes of one project, found by envhub labels.
+// Named data volumes of one project, found by ProjectDockHub labels.
 async function projectVolumeNames(projectName) {
   assertProjectName(projectName);
   const res = await runDocker([
@@ -117,8 +117,8 @@ async function stopProject(projectName) {
   return runDocker(['stop', ...ids], { timeout: 120000 });
 }
 
-// Removes every container of one envhub project, with its anonymous volumes (the database data),
-// then the PHP image and network it created. Containers are found by envhub labels,
+// Removes every container of one ProjectDockHub project, with its anonymous volumes (the database data),
+// then the PHP image and network it created. Containers are found by ProjectDockHub labels,
 // so containers that belong to anything else are never touched.
 // With `keepData`, the named volumes with the database data stay, otherwise they are removed too.
 async function removeProject(projectName, { keepData = false } = {}) {

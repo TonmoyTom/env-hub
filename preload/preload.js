@@ -46,6 +46,7 @@ const INVOKE = {
 // Allowlist: the only events the renderer can subscribe to.
 const EVENTS = {
   containersChanged: 'containers:changed',
+  dockerState: 'docker:state',
   projectProgress: 'project:progress',
   projectLog: 'project:log',
   menuAction: 'menu:action',
@@ -103,6 +104,11 @@ contextBridge.exposeInMainWorld('envhub', {
     const listener = (_event, data) => callback(data);
     ipcRenderer.on(EVENTS.projectLog, listener);
     return () => ipcRenderer.removeListener(EVENTS.projectLog, listener);
+  },
+  onDockerState: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on(EVENTS.dockerState, listener);
+    return () => ipcRenderer.removeListener(EVENTS.dockerState, listener);
   },
   onContainersChanged: (callback) => {
     const listener = (_event, data) => callback(data);

@@ -49,7 +49,7 @@ function laravelProject({ name, phpVersion, folder, dbPassword, options, version
   const opts = normalizeOptions(options);
   const password = String(dbPassword || '');
   const webRoot = '/var/www/html';
-  // An existing project keeps its own folder clean: its PHP Dockerfile and nginx file live in envhub's data folder.
+  // An existing project keeps its own folder clean: its PHP Dockerfile and nginx file live in ProjectDockHub's data folder.
   const support = supportDir || path.join(folder, 'docker');
   const nginxConf = path.join(support, 'nginx', 'default.conf');
   const phpContext = path.join(support, 'php');

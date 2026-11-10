@@ -295,7 +295,7 @@ test('settings: the projects folder can be chosen, is checked, and earlier folde
   settings.init(data);
   assert.strictEqual(settings.projectsBaseDir(fallback), fallback);
   assert.throws(() => settings.setProjectsDir('relative/dir', { dataDir: data }), /full folder path/);
-  assert.throws(() => settings.setProjectsDir(path.join(data, 'x'), { dataDir: data }), /belongs to envhub/);
+  assert.throws(() => settings.setProjectsDir(path.join(data, 'x'), { dataDir: data }), /belongs to ProjectDockHub/);
 
   assert.strictEqual(settings.setProjectsDir(dirA, { dataDir: data }), path.resolve(dirA));
   assert.ok(fs.existsSync(dirA));
@@ -340,8 +340,8 @@ test('sync: export leaves out passwords and the demo, import checks every projec
   assert.strictEqual(missing.add.length, 0);
   assert.match(missing.skipped[0].reason, /folder not found/);
 
-  assert.throws(() => planImport({ hello: 1 }, { existingNames: [], creatableStacks: [], folderExists: () => true }), /not an envhub projects file/);
-  assert.throws(() => planImport({ format: 'envhub-projects', version: 99, projects: [] }, { existingNames: [], creatableStacks: [], folderExists: () => true }), /newer envhub/);
+  assert.throws(() => planImport({ hello: 1 }, { existingNames: [], creatableStacks: [], folderExists: () => true }), /not a ProjectDockHub projects file/);
+  assert.throws(() => planImport({ format: 'envhub-projects', version: 99, projects: [] }, { existingNames: [], creatableStacks: [], folderExists: () => true }), /newer ProjectDockHub/);
   const bad = planImport({ format: 'envhub-projects', version: 1, projects: [{ name: 'Bad Name', stack: 'laravel', folder: '/x' }, { name: 'ok', stack: 'cobol', folder: '/x' }] }, { existingNames: [], creatableStacks: ['laravel'], folderExists: () => true });
   assert.deepStrictEqual(bad.skipped.map((s) => s.reason), ['invalid name', 'unknown stack "cobol"']);
 });
@@ -406,14 +406,14 @@ test('connectionData gives the Credentials tab the same facts as the text, as da
   assert.deepStrictEqual(data.extras, [{ name: 'rabbitmq', image: 'rabbitmq:3', ports: [{ host: 15672, container: 15672 }], env: { RABBITMQ_DEFAULT_PASS: 'rb' } }]);
 });
 
-test('tray menu: Open envhub and Exit', () => {
+test('tray menu: Open ProjectDockHub and Exit', () => {
   const { trayTemplate } = require('../main/tray');
   const calls = [];
   const items = trayTemplate({ show: () => calls.push('show'), quit: () => calls.push('quit') });
   const labels = items.filter((i) => i.label).map((i) => i.label);
-  assert.deepStrictEqual(labels, ['Open envhub', 'Exit']);
+  assert.deepStrictEqual(labels, ['Open ProjectDockHub', 'Exit']);
   items.find((i) => i.label === 'Exit').click();
-  items.find((i) => i.label === 'Open envhub').click();
+  items.find((i) => i.label === 'Open ProjectDockHub').click();
   assert.deepStrictEqual(calls, ['quit', 'show']);
 });
 
@@ -436,4 +436,59 @@ test('describeVolumes lists data and cache volumes with their sizes, and the sha
   assert.strictEqual(out.totalBytes, 5000);
   assert.deepStrictEqual(out.folders, [{ service: 'node', source: 'C:/p/web', target: '/app' }]);
   assert.deepStrictEqual(describeVolumes({ services: [] }, 'x'), { volumes: [], folders: [], totalBytes: 0 });
+});
+
+test('docker events restart by themselves and report when Docker goes away and comes back', async () => {
+  const { EventEmitter } = require('events');
+  const { startEvents } = require('../main/docker/events');
+  const children = [];
+  const fakeSpawn = () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.kill = () => child.emit('close', 0);
+    children.push(child);
+    return child;
+  };
+  const changes = [];
+  const states = [];
+  const realSetTimeout = global.setTimeout;
+  // Fast timers: every wait is 5 ms, so the test does not take seconds.
+  global.setTimeout = (fn) => realSetTimeout(fn, 5);
+  try {
+    const stop = startEvents((c) => changes.push(c), null, (s) => states.push(s), fakeSpawn);
+    assert.strictEqual(children.length, 1);
+
+    // a container event comes through
+    children[0].stdout.emit('data', Buffer.from(JSON.stringify({ Action: 'start', Actor: { ID: 'abc', Attributes: { name: 'envhub-p-app', 'com.envhub.project': 'p', 'com.envhub.service': 'app' } } }) + '\n'));
+    assert.deepStrictEqual(changes.map((c) => [c.action, c.project, c.service]), [['start', 'p', 'app']]);
+
+    // Docker stops: the program ends -> "down", and it is started again
+    children[0].emit('close', 1);
+    assert.deepStrictEqual(states, ['down']);
+    await new Promise((r) => realSetTimeout(r, 40));
+    assert.strictEqual(children.length, 2);
+
+    // Docker is back: the new program stays alive -> "up"
+    await new Promise((r) => realSetTimeout(r, 40));
+    assert.deepStrictEqual(states, ['down', 'up']);
+
+    // a program that ends again right away is still only reported once
+    children[1].emit('close', 1);
+    children[children.length - 1].emit('close', 1);
+    stop();
+    const count = children.length;
+    await new Promise((r) => realSetTimeout(r, 40));
+    assert.strictEqual(children.length, count); // stopped: no more restarts
+  } finally {
+    global.setTimeout = realSetTimeout;
+  }
+});
+
+test('docker check: an empty or error answer is not "running"', () => {
+  const { SERVER_VERSION, CONNECT_ERROR } = require('../main/docker/check');
+  for (const good of ['27.4.0', '28.0.1-rc.1', '24.0.7']) assert.ok(SERVER_VERSION.test(good), good);
+  for (const bad of ['', 'error during connect: Get "http://x/info"', 'unknown', ' ']) assert.ok(!SERVER_VERSION.test(bad), bad);
+  assert.ok(CONNECT_ERROR.test('error during connect: Get "http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.47/info": open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.'));
+  assert.ok(CONNECT_ERROR.test('Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?'));
+  assert.ok(!CONNECT_ERROR.test('27.4.0'));
 });

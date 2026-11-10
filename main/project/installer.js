@@ -86,8 +86,8 @@ function restoreLaravel({ folder }, log = () => {}) {
   return streamDocker(args, log, { timeout: INSTALL_TIMEOUT_MS });
 }
 
-// Merges the envhub .env lines into an .env the generator already made (Laravel ships one).
-// Keys envhub defines replace the old lines; every other line is kept.
+// Merges the ProjectDockHub .env lines into an .env the generator already made (Laravel ships one).
+// Keys ProjectDockHub defines replace the old lines; every other line is kept.
 function mergeEnv(existing, ours) {
   const keyOf = (line) => {
     const m = /^\s*#?\s*([A-Z][A-Z0-9_]*)\s*=/.exec(line);

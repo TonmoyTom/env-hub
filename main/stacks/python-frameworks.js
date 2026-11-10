@@ -1,7 +1,7 @@
 'use strict';
 
 // Starter projects for Python on the "Docker image" stack: Flask, Django, FastAPI.
-// The user picks one in Setup. envhub writes the starter files, the packages go into requirements.txt
+// The user picks one in Setup. ProjectDockHub writes the starter files, the packages go into requirements.txt
 // (pip install runs when the project starts), and the database that was ticked is wired in through
 // environment variables (see `databaseEnv`) and a small db.py that shows if the connection works.
 

@@ -94,7 +94,7 @@ async function imageExists(image, fetchFn = fetch) {
   }
 }
 
-// Where each version list comes from. The tag shapes are the ones envhub builds images from:
+// Where each version list comes from. The tag shapes are the ones ProjectDockHub builds images from:
 // php:<v>-fpm, node:<v>-alpine, mysql:<v>, postgres:<v>, mongo:<v>, redis:<v>.
 // Node: only even majors (the LTS lines), the odd ones are short lived.
 // MySQL: the 8.0 and 8.4 lines, and 9.7 or newer (9.7 is an LTS line, 26.7 / 26.10 ... are the calendar versioned

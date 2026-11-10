@@ -95,7 +95,7 @@ function clearAssignments(name) {
   assignments.delete(name);
 }
 
-// Host ports held by other projects, so two envhub projects never pick the same port.
+// Host ports held by other projects, so two ProjectDockHub projects never pick the same port.
 function hostPortsUsedByOthers(name) {
   const used = new Set();
   for (const [owner, list] of assignments) {

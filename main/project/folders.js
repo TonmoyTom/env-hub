@@ -10,11 +10,11 @@ function isInside(base, folder) {
   return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
-// Deletes a project's folder, but only inside the envhub projects folder.
+// Deletes a project's folder, but only inside the ProjectDockHub projects folder.
 // Returns { deleted, missing, error }. It never throws.
 function removeProjectFolder(base, folder) {
   if (!isInside(base, folder)) {
-    return { deleted: false, missing: false, error: 'The folder is outside the envhub projects folder, so it was left alone.' };
+    return { deleted: false, missing: false, error: 'The folder is outside the ProjectDockHub projects folder, so it was left alone.' };
   }
   if (!fs.existsSync(folder)) {
     return { deleted: false, missing: true, error: null };

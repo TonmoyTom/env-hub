@@ -7,7 +7,7 @@ const DB_NAME = 'app';
 const DB_USER = 'app';
 
 // Name the user can give the database in Edit services. The container always starts with `app`
-// (changing its env would recreate the container), and envhub creates the chosen name next to it.
+// (changing its env would recreate the container), and ProjectDockHub creates the chosen name next to it.
 const DB_NAME_RE = /^[a-z][a-z0-9_]{0,40}$/;
 
 // Empty means "keep the default". Anything else must be a plain name, because it goes into SQL.
@@ -28,7 +28,7 @@ function dbNameOf(spec) {
 
 // The user name the app connects with. `app` is the admin account the container starts with,
 // and it is kept as it is (changing it would need a new container). The app user is created next to it.
-const RESERVED_USERS = ['root', 'postgres', 'admin', 'mysql', 'mongodb', 'envhub'];
+const RESERVED_USERS = ['root', 'postgres', 'admin', 'mysql', 'mongodb', 'envhub', 'projectdockhub'];
 
 function normalizeDbUser(value) {
   if (value === undefined || value === null) return undefined;

@@ -78,7 +78,7 @@ function majorMinor(text) {
   return m ? `${m[1]}.${m[2]}` : null;
 }
 
-// Languages without their own envhub stack run as a "Docker image" project: an image, a port and a
+// Languages without their own ProjectDockHub stack run as a "Docker image" project: an image, a port and a
 // start command that installs the packages first. Every part can be changed in the Setup step.
 // Returns { image, port, command, label, note } or null.
 function detectLanguage(folder, pkg) {
@@ -180,7 +180,7 @@ function detectProject(folder) {
     }
   }
 
-  // No envhub stack of its own: a language, run as a Docker image project.
+  // No ProjectDockHub stack of its own: a language, run as a Docker image project.
   const lang = detectLanguage(folder, pkg);
   if (lang) {
     result.stack = 'docker';

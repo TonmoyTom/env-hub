@@ -1,4 +1,4 @@
-/* envhub UI. Colors and sizes are tokens on :root, so light and dark theme only change the values.
+/* ProjectDockHub UI. Colors and sizes are tokens on :root, so light and dark theme only change the values.
    No inline style attributes in HTML (CSP). Set custom properties from JS with el.style.setProperty. */
 
 :root {
@@ -3162,4 +3162,400 @@ button.danger-solid:hover {
   width: 56px;
   height: 56px;
   border-radius: 14px;
+}
+
+/* ---------- New project ---------- */
+
+#create-card {
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 26px 28px 28px;
+}
+
+.np-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.np-head h2 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.np-head .small {
+  margin: 4px 0 0;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stepper li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.stepper li + li::before {
+  content: "";
+  width: 28px;
+  height: 2px;
+  margin: 0 10px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.stepper li.done + li::before,
+.stepper li.done + li.active::before {
+  background: var(--accent);
+}
+
+.step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.stepper li.active {
+  color: var(--fg);
+}
+
+.stepper li.active .step-num {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.stepper li.done .step-num {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: transparent;
+  position: relative;
+}
+
+.stepper li.done .step-num::after {
+  content: "\2713";
+  position: absolute;
+  color: var(--accent-ink);
+  font-size: 13px;
+}
+
+#create-card .stage {
+  margin-top: 22px;
+}
+
+.np-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+
+.np-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.hint {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.choice-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.choice-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.choice-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.choice-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.choice-card:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.choice-card:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.choice-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--subtle);
+  color: var(--muted);
+}
+
+.choice-card:has(input:checked) .choice-icon {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.choice-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.choice-text strong {
+  font-size: 15px;
+}
+
+.choice-text span {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+#create-card .field-row input {
+  min-height: 44px;
+  font-size: 15px;
+}
+
+.np-next {
+  min-height: 44px;
+  padding: 0 22px;
+}
+
+.folder-chip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--subtle);
+}
+
+.folder-chip .small {
+  margin: 0;
+}
+
+.folder-chip-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.folder-chip[hidden] {
+  display: none;
+}
+
+button.link-btn {
+  min-height: auto;
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--accent-ink);
+  font-size: 13px;
+}
+
+button.link-btn:hover {
+  text-decoration: underline;
+}
+
+button.link-btn + button.link-btn {
+  margin-left: 0;
+}
+
+#projects-dir-note {
+  margin-top: 8px;
+}
+
+.np-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 13px;
+}
+
+.stack-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+button.stack-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: none;
+  text-align: left;
+  font-weight: 500;
+}
+
+button.stack-card:hover {
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--border));
+}
+
+button.stack-card:active {
+  transform: none;
+}
+
+button.stack-card.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.stack-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: var(--brand);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.stack-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.stack-text strong {
+  font-size: 14.5px;
+}
+
+.stack-text span {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.version-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.version-row:has(> select[hidden]) {
+  display: none;
+}
+
+.np-label-inline {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.version-row select {
+  min-width: 160px;
+}
+
+/* "Install the app now?" as two selectable rows, like the cards above. */
+#install-choice {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+#install-choice legend {
+  margin-bottom: 8px;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+#install-choice label {
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+#install-choice label:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+#install-choice label:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+#install-choice input {
+  margin-top: 3px;
+}
+
+#create-card .stage-actions {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
 }

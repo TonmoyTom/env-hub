@@ -1,4 +1,4 @@
-# envhub
+# ProjectDockHub
 
 A free, open source desktop app that runs your whole local development
 environment in Docker, managed from a GUI. Nobody needs to type Docker or

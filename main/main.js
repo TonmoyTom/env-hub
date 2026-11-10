@@ -82,13 +82,31 @@ function handle(channel, fn) {
   });
 }
 
+// The app was called envhub before. Its data folder (projects, secrets, settings) keeps that name when it exists,
+// so the rename loses nothing. A new install uses the new name. Something that already set the folder (a test
+// script) is left alone.
+const LEGACY_DATA_DIR = path.join(app.getPath('appData'), 'envhub');
+if (app.getPath('userData') === path.join(app.getPath('appData'), app.getName()) && fs.existsSync(LEGACY_DATA_DIR)) {
+  app.setPath('userData', LEGACY_DATA_DIR);
+}
+
 function dataDir() {
   return app.getPath('userData');
 }
 
 // New projects live outside Documents, which is often synced by OneDrive.
-function defaultProjectsDir() {
+// The old default folder keeps being used when it exists, so the projects made before the rename stay together
+// with the new ones. It is always one of the folders a project can be deleted from.
+function legacyProjectsDir() {
   return path.join(app.getPath('home'), 'envhub-projects');
+}
+
+function defaultProjectsDir() {
+  return fs.existsSync(legacyProjectsDir()) ? legacyProjectsDir() : path.join(app.getPath('home'), 'ProjectDockHub-projects');
+}
+
+function knownProjectDirs() {
+  return [...new Set([...settings.knownProjectDirs(defaultProjectsDir()), path.resolve(legacyProjectsDir())])];
 }
 
 // The user can choose another folder (Settings in the New project step). Projects made earlier stay where they are.
@@ -233,7 +251,7 @@ function logSender(name) {
   return send;
 }
 
-// The folder of an existing project: an absolute path to a folder that exists, not envhub's own data.
+// The folder of an existing project: an absolute path to a folder that exists, not ProjectDockHub's own data.
 function checkExistingFolder(folder) {
   if (typeof folder !== 'string' || !path.isAbsolute(folder)) {
     throw new Error('Enter the full path of the project folder, like C:/laragon/www/myapp');
@@ -247,9 +265,9 @@ function checkExistingFolder(folder) {
   }
   if (!stat.isDirectory()) throw new Error(`Not a folder: ${dir}`);
   const data = path.resolve(dataDir());
-  if (dir === data || dir.startsWith(data + path.sep)) throw new Error('Choose your own project folder, not the envhub data folder');
+  if (dir === data || dir.startsWith(data + path.sep)) throw new Error('Choose your own project folder, not the ProjectDockHub data folder');
   if (projects.listSpecs().some((s) => s.folder && path.resolve(s.folder) === dir)) {
-    throw new Error('This folder is already a project in envhub');
+    throw new Error('This folder is already a project in ProjectDockHub');
   }
   return dir;
 }
@@ -319,7 +337,7 @@ function registerIpcHandlers() {
     let spec;
 
     // Everything is validated before any folder is created.
-    // Same password envhub uses for the running containers, so the folder's .env matches them.
+    // Same password ProjectDockHub uses for the running containers, so the folder's .env matches them.
     const folderPassword = dbPassword || getOrCreateSecret(dataDir(), `${name}.db`);
     if (stack === 'laravel') {
       if (!registry.has('php', version)) {
@@ -397,7 +415,7 @@ function registerIpcHandlers() {
     return { folder: dir, ...detectProject(dir) };
   });
 
-  // Adds the folder as a project. The folder is only read: envhub writes no file into it,
+  // Adds the folder as a project. The folder is only read: ProjectDockHub writes no file into it,
   // except a missing vendor/ and .env for Laravel (composer install), and never deletes it.
   handle('project:import', async (input) => {
     const { name, stack, version, options } = input || {};
@@ -473,7 +491,7 @@ function registerIpcHandlers() {
     report('ports', null, 'Looking for free ports');
     log('Looking for free ports');
 
-    // Ports held by any Docker container (running or stopped) or by another envhub project
+    // Ports held by any Docker container (running or stopped) or by another ProjectDockHub project
     // are off limits, so several projects can run together without clashing.
     // Anything else using a port on this machine is caught by the free-port check.
     const dockerPorts = await dockerHostPorts(spec.name);
@@ -595,13 +613,13 @@ function registerIpcHandlers() {
     }
 
     // The generated Compose folder goes, and so does the project folder with all the files in it.
-    // The project folder is only deleted when it is inside the envhub projects folder.
+    // The project folder is only deleted when it is inside the ProjectDockHub projects folder.
     fs.rmSync(path.join(dataDir(), 'projects', spec.name), { recursive: true, force: true });
-    // Only a folder envhub created is deleted, in any folder that was used for projects. A project the user
+    // Only a folder ProjectDockHub created is deleted, in any folder that was used for projects. A project the user
     // brought in (imported) is never deleted, even when it sits inside a projects folder.
     let folderResult = null;
     if (spec.folder && !spec.imported) {
-      for (const base of settings.knownProjectDirs(defaultProjectsDir())) {
+      for (const base of knownProjectDirs()) {
         folderResult = removeProjectFolder(base, spec.folder);
         if (folderResult.deleted || folderResult.missing) break;
       }
@@ -786,7 +804,7 @@ function registerIpcHandlers() {
     const spec = requireSpec(name);
     if (!spec.folder) throw new Error('This project has no folder.');
     // The user's own folder (an imported project) is written only because this button was pressed, and the old .env is backed up.
-    const bases = settings.knownProjectDirs(defaultProjectsDir());
+    const bases = knownProjectDirs();
     const base = spec.imported ? path.dirname(spec.folder) : bases.find((b) => isInside(b, spec.folder)) || projectsBaseDir();
     const res = writeEnvFile(base, spec.folder, envTextFor(spec, target));
     return { ...res, folder: spec.folder };
@@ -830,7 +848,7 @@ function guarded(run) {
     try {
       await run();
     } catch (err) {
-      dialog.showErrorBox('envhub', err.message || String(err));
+      dialog.showErrorBox('ProjectDockHub', err.message || String(err));
     }
   };
 }
@@ -862,7 +880,7 @@ function setupMenu() {
 
     // Sync 1: the list of projects, as one file. No passwords are written.
     exportProjects: guarded(async () => {
-      const res = await dialog.showSaveDialog(mainWindow, { title: 'Export projects', defaultPath: path.join(app.getPath('documents'), 'envhub-projects.json'), filters: [{ name: 'envhub projects', extensions: ['json'] }] });
+      const res = await dialog.showSaveDialog(mainWindow, { title: 'Export projects', defaultPath: path.join(app.getPath('documents'), 'projectdockhub-projects.json'), filters: [{ name: 'ProjectDockHub projects', extensions: ['json'] }] });
       if (res.canceled || !res.filePath) return;
       const data = exportProjects(projects.listSpecs());
       fs.writeFileSync(res.filePath, JSON.stringify(data, null, 2));
@@ -870,7 +888,7 @@ function setupMenu() {
     }),
 
     importProjects: guarded(async () => {
-      const res = await dialog.showOpenDialog(mainWindow, { title: 'Import projects', filters: [{ name: 'envhub projects', extensions: ['json'] }], properties: ['openFile'] });
+      const res = await dialog.showOpenDialog(mainWindow, { title: 'Import projects', filters: [{ name: 'ProjectDockHub projects', extensions: ['json'] }], properties: ['openFile'] });
       if (res.canceled || res.filePaths.length === 0) return;
       let data;
       try {
@@ -904,11 +922,11 @@ function setupMenu() {
       const doc = DOCS[key];
       if (!doc) return;
       const win = openDocWindow(mainWindow, doc[0], path.join(__dirname, '..', doc[1]));
-      if (!win) dialog.showErrorBox('envhub', `Could not open ${doc[1]}.`);
+      if (!win) dialog.showErrorBox('ProjectDockHub', `Could not open ${doc[1]}.`);
     },
     openVersionsFile: guarded(openVersionsFile),
 
-    about: () => say(`envhub ${app.getVersion()}`, 'Run local development projects in Docker without typing commands.\nFree and open source (MIT).'),
+    about: () => say(`ProjectDockHub ${app.getVersion()}`, 'Run local development projects in Docker without typing commands.\nFree and open source (MIT).'),
   });
 }
 
@@ -932,7 +950,7 @@ function createWindow() {
     height: 680,
     minWidth: 780,
     minHeight: 520,
-    title: 'envhub',
+    title: 'ProjectDockHub',
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     webPreferences: {
       preload: PRELOAD_PATH,
@@ -957,7 +975,7 @@ function createWindow() {
       trayHintShown = true;
       tray.displayBalloon({
         iconType: 'info',
-        title: 'envhub is still running',
+        title: 'ProjectDockHub is still running',
         content: 'It is here next to the clock. Right click the icon and choose Exit to close it.',
       });
     }
@@ -970,7 +988,7 @@ function createWindow() {
   mainWindow.loadFile(INDEX_PATH);
 }
 
-// Starting envhub again while it runs in the tray brings back the window that is already open.
+// Starting ProjectDockHub again while it runs in the tray brings back the window that is already open.
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -1005,6 +1023,8 @@ app.whenReady().then(() => {
   stopEvents = startEvents(
     (change) => sendToRenderer('containers:changed', change),
     () => {},
+    // Docker went away or came back: the window checks Docker again at once.
+    (state) => sendToRenderer('docker:state', state),
   );
 
   app.on('activate', () => showWindow());

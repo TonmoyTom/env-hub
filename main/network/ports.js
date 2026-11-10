@@ -75,7 +75,7 @@ function portsOf(project) {
 }
 
 // Returns a copy of the project with busy host ports moved to free ones.
-// `reserved` holds ports that must not be used (other envhub projects, other Docker containers).
+// `reserved` holds ports that must not be used (other ProjectDockHub projects, other Docker containers).
 // `changed` lists each port that was moved, so the UI can tell the user.
 // `owned` holds host ports this project's own running containers already use. They are not
 // busy for this project, so applying a change to a running project keeps its URLs.

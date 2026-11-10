@@ -19,7 +19,7 @@ function clean(spec) {
   return copy;
 }
 
-// The projects that envhub made or imported (the built in demo is left out).
+// The projects that ProjectDockHub made or imported (the built in demo is left out).
 function exportProjects(specs, now = new Date()) {
   return {
     format: FORMAT,
@@ -31,13 +31,13 @@ function exportProjects(specs, now = new Date()) {
 
 // Decides which projects of an export file can be added here.
 // `folderExists(path)` tells if a project folder exists on this computer.
-// Returns { add: [spec], skipped: [{ name, reason }] }. Throws when the file is not an envhub export.
+// Returns { add: [spec], skipped: [{ name, reason }] }. Throws when the file is not a ProjectDockHub export.
 function planImport(data, { existingNames, creatableStacks, folderExists }) {
   if (!data || data.format !== FORMAT || !Array.isArray(data.projects)) {
-    throw new Error('This file is not an envhub projects file.');
+    throw new Error('This file is not a ProjectDockHub projects file.');
   }
   if (data.version > VERSION) {
-    throw new Error('This file was made by a newer envhub. Update envhub first.');
+    throw new Error('This file was made by a newer ProjectDockHub. Update ProjectDockHub first.');
   }
 
   const add = [];

@@ -75,21 +75,21 @@ const NGINX_CONF = `server {
 // Placeholder page. Replace the whole folder with your Laravel app when ready.
 function placeholderIndex(name) {
   return `<?php
-// Placeholder created by envhub for the project "${name}".
+// Placeholder created by ProjectDockHub for the project "${name}".
 // Replace this folder with your Laravel app. Keep public/ as the web root.
 ?>
 <!doctype html>
 <html>
 <head><meta charset="utf-8"><title>${name}</title></head>
 <body>
-  <h1>envhub is running: ${name}</h1>
+  <h1>ProjectDockHub is running: ${name}</h1>
   <p>PHP <?php echo PHP_VERSION; ?></p>
 </body>
 </html>
 `;
 }
 
-// The PHP Dockerfile and nginx file of a Laravel project that was not created by envhub.
+// The PHP Dockerfile and nginx file of a Laravel project that was not created by ProjectDockHub.
 function writeLaravelSupport(dir, phpVersion) {
   if (!registry.has('php', phpVersion)) throw new Error('Unsupported PHP version');
   fs.mkdirSync(path.join(dir, 'php'), { recursive: true });
@@ -135,14 +135,14 @@ function scaffoldLaravel({ baseDir, name, phpVersion, options, versions, dbPassw
 function nodeServer(name, label, port) {
   return `'use strict';
 
-// Placeholder created by envhub for the project "${name}".
+// Placeholder created by ProjectDockHub for the project "${name}".
 // Replace the files in this folder with your ${label} app.
 const http = require('http');
 
 http
   .createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end('<h1>envhub is running: ${name}</h1><p>${label} placeholder on Node ' + process.version + '</p>');
+    res.end('<h1>ProjectDockHub is running: ${name}</h1><p>${label} placeholder on Node ' + process.version + '</p>');
   })
   .listen(${port}, '0.0.0.0');
 `;

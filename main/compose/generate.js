@@ -156,7 +156,7 @@ function validateProject(project) {
 }
 
 // Builds a Compose object from a validated project config.
-// Every service gets labels so envhub can find and control it later.
+// Every service gets labels so ProjectDockHub can find and control it later.
 // Ports are bound to 127.0.0.1 by default.
 function generateCompose(project) {
   validateProject(project);
@@ -206,7 +206,7 @@ function generateCompose(project) {
     }));
 
     // Named volumes keep database data when the container is recreated. They are labeled so
-    // envhub can find and remove them when the project is deleted.
+    // ProjectDockHub can find and remove them when the project is deleted.
     for (const v of svc.dataVolumes || []) {
       const volumeName = `envhub-${project.name}-${svc.name}-${v.name}`;
       mounts.push({ type: 'volume', source: volumeName, target: v.target });

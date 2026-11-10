@@ -4,12 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const { isInside } = require('./folders');
 
-// Writes the .env text into the project folder (inside the envhub projects folder only).
+// Writes the .env text into the project folder (inside the ProjectDockHub projects folder only).
 // An existing .env that differs is copied to .env.envhub-backup (or -2, -3...) first, never lost.
 // Returns { status: 'created' | 'updated' | 'unchanged', file, backup }. Throws a readable error.
 function writeEnvFile(base, folder, text) {
   if (!isInside(base, folder)) {
-    throw new Error('The project folder is outside the envhub projects folder, so no .env was written.');
+    throw new Error('The project folder is outside the ProjectDockHub projects folder, so no .env was written.');
   }
   if (!fs.existsSync(folder) || !fs.statSync(folder).isDirectory()) {
     throw new Error('The project folder does not exist any more.');

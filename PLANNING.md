@@ -1,4 +1,4 @@
-# envhub: Planning
+# ProjectDockHub: Planning
 
 Working document. Update it when a decision changes, and add a date next to the change.
 
@@ -14,7 +14,7 @@ Services: MySQL, PostgreSQL, MongoDB, Redis, phpMyAdmin, Adminer, Mailpit, and a
 |---|---|---|
 | App framework | Electron (JavaScript) | Team knows JavaScript; Docker libraries exist for Node. Tauri later if RAM becomes a problem. |
 | Runtime | Docker only | One engine means one set of bugs. |
-| Config source of truth | envhub app data folder | User never edits compose files by hand. |
+| Config source of truth | ProjectDockHub app data folder | User never edits compose files by hand. |
 | Network default | Bind to 127.0.0.1 | Safe by default. LAN sharing is opt-in per project. |
 | Admin tools | Not exposed to LAN by default | Database and mail UIs carry more risk. |
 | License | MIT | Simple and common for developer tools. |
@@ -46,10 +46,10 @@ Next (in this order)
 
 - 2026-11-05: Electron (JavaScript), Docker only, MIT license, Laravel first.
 - 2026-11-09: "Install a fresh app" is a question in Setup (Yes = official generator, no placeholder; No = placeholder). node_modules for Node stacks lives in a Docker volume, with a "Packages for editor" button. Details are in HANDOVER.md section 5.
-- 2026-11-09: Projects folder is a user setting (File > Projects folder...), earlier folders are remembered, imported projects are never deleted by envhub.
+- 2026-11-09: Projects folder is a user setting (File > Projects folder...), earlier folders are remembered, imported projects are never deleted by ProjectDockHub.
 - 2026-11-09: Application menu added. Planning (this file) and the handover notes open from Help. Tools > Sync has three parts: (1) export and import the project list as a file, without passwords, (2) refresh the Docker state, (3) refresh the PHP/Node/database version lists from Docker Hub.
 - 2026-11-09: Update checking is planned, but not built: it needs a GitHub repo for releases.
-- 2026-11-10: envhub runs in the tray. Closing the window hides it; Exit (tray right click or File menu) quits. Only one copy runs at a time.
+- 2026-11-10: ProjectDockHub runs in the tray. Closing the window hides it; Exit (tray right click or File menu) quits. Only one copy runs at a time.
 
 ## Planned: modern UI redesign (not started, do it after the features are stable)
 

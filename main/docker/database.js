@@ -3,7 +3,7 @@
 const { runDocker } = require('./exec');
 const { DB_NAME, DB_USER } = require('../stacks/services');
 
-// After the containers start, envhub does two small things inside the database containers:
+// After the containers start, ProjectDockHub does two small things inside the database containers:
 //   1. creates the database the user named (if it is not the default `app`),
 //   2. creates the app user (if it is new) and sets its password to the current one.
 // Both are done with SQL on the running server, so nothing is recreated and the data stays.
