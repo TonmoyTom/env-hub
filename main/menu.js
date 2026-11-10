@@ -24,7 +24,8 @@ function buildTemplate(actions, isMac = process.platform === 'darwin') {
     { label: 'Open projects folder', click: () => actions.openProjectsDir() },
     { label: 'Open envhub data folder', click: () => actions.openDataDir() },
     { type: 'separator' },
-    isMac ? { role: 'close' } : { role: 'quit' },
+    { label: 'Close window (envhub keeps running in the tray)', role: 'close' },
+    { label: isMac ? 'Quit envhub' : 'Exit', role: 'quit' },
   ];
 
   const tools = [

@@ -5,9 +5,9 @@
   "main": "main/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test tests/compose.test.js tests/ports.test.js tests/laravel.test.js tests/Portcheck.test.js tests/Store.test.js tests/Stacks.test.js tests/Pipeline.test.js tests/Hub.test.js tests/Folders.test.js tests/Edit.test.js tests/Links.test.js tests/Dbname.test.js tests/Credentials.test.js tests/Volumes.test.js tests/Envfile.test.js tests/Missing.test.js tests/Lan.test.js tests/Versions.test.js tests/Portable.test.js tests/Installer.test.js",
+    "test": "node --test tests/compose.test.js tests/ports.test.js tests/laravel.test.js tests/Portcheck.test.js tests/Store.test.js tests/Stacks.test.js tests/Pipeline.test.js tests/Hub.test.js tests/Folders.test.js tests/Edit.test.js tests/Links.test.js tests/Dbname.test.js tests/Credentials.test.js tests/Volumes.test.js tests/Envfile.test.js tests/Missing.test.js tests/Lan.test.js tests/Versions.test.js tests/Portable.test.js tests/Installer.test.js tests/Stats.test.js",
     "dist": "electron-builder --win",
-    "art": "node scripts/make-installer-art.js"
+    "art": "electron scripts/make-brand-assets.js"
   },
   "author": "envhub contributors",
   "license": "MIT",
@@ -25,7 +25,11 @@
       "build/icon.png",
       "package.json",
       "PLANNING.md",
-      "HANDOVER.md"
+      "HANDOVER.md",
+      "build/tray.png",
+      "build/tray@2x.png",
+      "build/trayTemplate.png",
+      "build/trayTemplate@2x.png"
     ],
     "directories": {
       "output": "dist"
@@ -49,7 +53,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "envhub",
       "runAfterFinish": true,
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "installerHeader": "build/installerHeader.bmp"
     }
   }
 }

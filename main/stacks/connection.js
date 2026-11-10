@@ -207,4 +207,67 @@ function connectionText({ config, ports, password, rootPassword, dbName = DB_NAM
   return out.join('\n');
 }
 
-module.exports = { connectionText, envFileText };
+// The same facts as connectionText, as data, so the window can show cards with copy buttons.
+// { env: { docker, host }, databases: [...], pages: [...], extras: [...] }
+function connectionData({ config, ports, password, rootPassword, dbName = DB_NAME, dbUser = DB_USER, redisPassword = '', mail }) {
+  const root = rootPassword || password;
+  const user = dbUser || DB_USER;
+  const creds = { password, dbName, user, redisPassword, mail };
+  const has = (name) => config.services.some((s) => s.name === name);
+  const portOf = (service, container) => {
+    const host = hostPort(ports, service, container);
+    return host ? String(host) : '';
+  };
+  const url = (service, container) => {
+    const host = hostPort(ports, service, container);
+    return host ? `http://localhost:${host}` : '';
+  };
+
+  const databases = [];
+  if (has('mysql')) {
+    databases.push({ key: 'mysql', label: 'MySQL', host: 'localhost', port: portOf('mysql', 3306), database: dbName, user, password, rootPassword: root });
+  }
+  if (has('postgres')) {
+    databases.push({ key: 'postgres', label: 'PostgreSQL', host: 'localhost', port: portOf('postgres', 5432), database: dbName, user, password });
+  }
+  if (has('mongodb')) {
+    databases.push({ key: 'mongodb', label: 'MongoDB', host: 'localhost', port: portOf('mongodb', 27017), user, password, note: 'Use MongoDB Compass' });
+  }
+  if (has('redis')) {
+    databases.push({ key: 'redis', label: 'Redis', host: 'localhost', port: portOf('redis', 6379), password: redisPassword, note: redisPassword ? '' : 'No password' });
+  }
+
+  const pages = [];
+  if (has('phpmyadmin')) pages.push({ service: 'phpmyadmin', label: 'phpMyAdmin', url: url('phpmyadmin', 80), note: 'Signs in automatically as root' });
+  if (has('adminer')) {
+    const server = has('mysql') ? 'mysql' : 'postgres';
+    pages.push({ service: 'adminer', label: 'Adminer', url: url('adminer', 8080), note: `Server ${server}, user ${user}` });
+  }
+  if (mail && mail.host) {
+    pages.push({ service: '', label: 'Mail (SMTP)', url: `${mail.host}:${mail.port}`, note: `External SMTP, user ${mail.username || '-'}` });
+  } else if (has('mailpit')) {
+    pages.push({ service: 'mailpit', label: 'Mailpit', url: url('mailpit', 8025), note: 'The app sends mail to mailpit:1025, no login' });
+  }
+
+  const known = new Set(['nginx', 'php', 'node', 'app', 'mysql', 'postgres', 'mongodb', 'redis', 'phpmyadmin', 'adminer', 'mailpit']);
+  const extras = config.services
+    .filter((service) => !known.has(service.name))
+    .map((service) => ({
+      name: service.name,
+      image: service.image,
+      ports: ports.filter((p) => p.service === service.name).map((p) => ({ host: p.host, container: p.container })),
+      env: { ...(service.env || {}) },
+    }));
+
+  return {
+    env: {
+      docker: envLines(config, creds, has, 'docker', ports).join('\n'),
+      host: envLines(config, creds, has, 'host', ports).join('\n'),
+    },
+    databases,
+    pages,
+    extras,
+  };
+}
+
+module.exports = { connectionText, connectionData, envFileText };

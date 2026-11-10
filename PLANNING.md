@@ -49,6 +49,7 @@ Next (in this order)
 - 2026-11-09: Projects folder is a user setting (File > Projects folder...), earlier folders are remembered, imported projects are never deleted by envhub.
 - 2026-11-09: Application menu added. Planning (this file) and the handover notes open from Help. Tools > Sync has three parts: (1) export and import the project list as a file, without passwords, (2) refresh the Docker state, (3) refresh the PHP/Node/database version lists from Docker Hub.
 - 2026-11-09: Update checking is planned, but not built: it needs a GitHub repo for releases.
+- 2026-11-10: envhub runs in the tray. Closing the window hides it; Exit (tray right click or File menu) quits. Only one copy runs at a time.
 
 ## Planned: modern UI redesign (not started, do it after the features are stable)
 
