@@ -11,7 +11,9 @@ const {
   removeProject,
   missingServices,
   projectLogs,
+  projectVolumeNames,
 } = require('./docker/containers');
+const { describeVolumes } = require('./stacks/volumes');
 const { startEvents } = require('./docker/events');
 const { dockerHostPorts } = require('./docker/ports');
 const { setupProject, stepsFor, waitForApp } = require('./docker/pipeline');
@@ -22,13 +24,14 @@ const registry = require('./registry/versions');
 const { normalizeOptions } = require('./stacks/laravel');
 const { normalizeNodeOptions, NODE_STACKS } = require('./stacks/node');
 const { streamDocker } = require('./docker/exec');
+const { projectStats, projectDisk, openShell } = require('./docker/stats');
 const { searchImages, listTags, imageExists, fetchVersionLists } = require('./docker/hub');
 const { normalizeExtraServices } = require('./stacks/extras');
 const { isEditable, describeForEdit, applyServiceEdit, diffServices } = require('./stacks/edit');
 const { buildLinks } = require('./stacks/links');
 const { normalizeDockerInput, packageRule } = require('./stacks/docker');
 const { normalizeFramework, frameworkCommand, FRAMEWORKS } = require('./stacks/python-frameworks');
-const { connectionText, envFileText } = require('./stacks/connection');
+const { connectionText, connectionData, envFileText } = require('./stacks/connection');
 const { dbNameOf, dbUserOf, appPasswordOf, normalizeDbName, normalizeDbUser, normalizePassword, normalizeMail } = require('./stacks/services');
 const { ensureDatabases } = require('./docker/database');
 const { scaffoldLaravel, scaffoldNode, scaffoldDocker, finishInstall, writeLaravelSupport } = require('./project/scaffold');
@@ -43,6 +46,7 @@ const projects = require('./store/projects');
 const settings = require('./store/settings');
 const { exportProjects, planImport } = require('./store/sync');
 const { installMenu } = require('./menu');
+const { createTray } = require('./tray');
 const { openDocWindow } = require('./docview');
 
 const VERSIONS_WAIT_MS = 2500;
@@ -57,6 +61,10 @@ const OPENABLE = { nginx: 80, node: 3000, phpmyadmin: 80, adminer: 8080, mailpit
 
 let mainWindow = null;
 let stopEvents = null;
+// The tray icon. Closing the window hides it; only Exit (tray, File menu, or the system) quits.
+let tray = null;
+let quitting = false;
+let trayHintShown = false;
 
 // Only accept IPC calls that come from our own local page.
 function isTrustedSender(event) {
@@ -182,6 +190,11 @@ function summarizeProject(spec) {
     label: stackLabel(spec),
     editable: isEditable(spec),
     services: config.services.map((s) => s.name),
+    // Services that keep data in a Docker volume (databases and stores), for the delete question.
+    dataServices: config.services.filter((s) => (s.dataVolumes || []).some((v) => v.name === 'data')).map((s) => s.name),
+    // A project the user brought in keeps its folder when the project is deleted.
+    imported: spec.imported === true,
+    folder: spec.folder || '',
     ports: knownPorts(spec),
   };
 }
@@ -674,6 +687,26 @@ function registerIpcHandlers() {
     });
   });
 
+  // Live numbers for the details page. Only the project name is sent; the service is checked by openShell.
+  handle('project:stats', (name) => projectStats(requireSpec(name).name));
+  handle('project:disk', (name) => projectDisk(requireSpec(name).name));
+  // The Volumes tab: every Docker volume of the project, and the folders shared from this computer.
+  // The sizes are not here: `docker system df` can take many seconds, so the window asks for them
+  // separately (project:disk) and fills them in when they arrive.
+  handle('project:volumes', async (name) => {
+    const spec = requireSpec(name);
+    const existing = await projectVolumeNames(spec.name);
+    return describeVolumes(configForPorts(spec), spec.name, existing, []);
+  });
+  handle('project:shell', (name, service) => {
+    const spec = requireSpec(name);
+    const known = configForPorts(spec).services.some((svc) => svc.name === service);
+    if (!known) {
+      throw new Error('This project has no such service');
+    }
+    return openShell(spec.name, service);
+  });
+
   // Opens the web page of one published port. The renderer sends a service name and a container port,
   // the URL is built here from the host port, so the renderer can never pass a URL.
   handle('project:openPort', async (name, service, container) => {
@@ -700,6 +733,22 @@ function registerIpcHandlers() {
   handle('project:logs', (name) => projectLogs(requireSpec(name).name, 500));
 
   // Credentials and .env lines for the Connection panel. Only this window can ask for them.
+  // The same, as data for the Credentials tab (cards with copy buttons).
+  handle('project:connectionData', (name) => {
+    const spec = requireSpec(name);
+    const creds = credentialsFor(spec);
+    return connectionData({
+      config: buildProject(spec, creds.root),
+      ports: knownPorts(spec),
+      password: creds.app,
+      rootPassword: creds.root,
+      dbName: dbNameOf(spec),
+      dbUser: creds.user,
+      redisPassword: creds.redis,
+      mail: spec.mail,
+    });
+  });
+
   handle('project:connection', (name) => {
     const spec = requireSpec(name);
     const creds = credentialsFor(spec);
@@ -869,12 +918,20 @@ function sendToRenderer(channel, payload) {
   }
 }
 
+// Brings the window back from the tray (or makes a new one if it was really closed).
+function showWindow() {
+  if (!mainWindow) createWindow();
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1100,
-    height: 760,
-    minWidth: 900,
-    minHeight: 600,
+    width: 1000,
+    height: 680,
+    minWidth: 780,
+    minHeight: 520,
     title: 'envhub',
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     webPreferences: {
@@ -891,6 +948,21 @@ function createWindow() {
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
+  // The close button hides the window to the tray. The containers, Docker events and the tray stay.
+  mainWindow.on('close', (event) => {
+    if (quitting || !tray) return;
+    event.preventDefault();
+    mainWindow.hide();
+    if (!trayHintShown && process.platform === 'win32') {
+      trayHintShown = true;
+      tray.displayBalloon({
+        iconType: 'info',
+        title: 'envhub is still running',
+        content: 'It is here next to the clock. Right click the icon and choose Exit to close it.',
+      });
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -898,7 +970,18 @@ function createWindow() {
   mainWindow.loadFile(INDEX_PATH);
 }
 
+// Starting envhub again while it runs in the tray brings back the window that is already open.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (app.isReady()) showWindow();
+  });
+}
+
 app.whenReady().then(() => {
+  if (!gotSingleInstanceLock) return;
   projects.init(dataDir());
   settings.init(dataDir());
   for (const warning of registry.load(path.join(dataDir(), 'versions.json')).warnings) console.warn(warning);
@@ -910,6 +993,13 @@ app.whenReady().then(() => {
   registerIpcHandlers();
   createWindow();
   setupMenu();
+  try {
+    tray = createTray({ show: showWindow, quit: () => app.quit() });
+  } catch (err) {
+    // Some Linux desktops have no tray. Then the close button quits, as before.
+    console.warn(`No tray icon: ${err.message}`);
+    tray = null;
+  }
 
   // Container status comes from Docker events, not polling.
   stopEvents = startEvents(
@@ -917,22 +1007,20 @@ app.whenReady().then(() => {
     () => {},
   );
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
+  app.on('activate', () => showWindow());
 });
 
 app.on('before-quit', () => {
+  quitting = true;
   if (stopEvents) {
     stopEvents();
     stopEvents = null;
   }
 });
 
+// With a tray icon the app stays when its window is hidden. Without one, closing the window quits.
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' && !tray) {
     app.quit();
   }
 });

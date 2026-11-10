@@ -7,256 +7,486 @@
   <title>envhub</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
-  <main class="shell">
-    <header class="topbar">
-      <h1>envhub</h1>
-      <span id="app-info" class="muted">Loading...</span>
-    </header>
-
-    <section class="card" id="docker-card" aria-live="polite">
-      <div class="card-head">
-        <h2>Docker</h2>
-        <button id="check-again" type="button">Check again</button>
-      </div>
-      <p id="docker-title" class="status-title">Checking Docker...</p>
-      <p id="docker-detail" class="muted"></p>
-      <div id="docker-guidance" class="guidance" hidden></div>
-    </section>
-
-    <section class="card" id="create-card">
-      <div class="card-head">
-        <h2>New project</h2>
-        <ol class="stages" id="stages" aria-label="Steps">
-          <li data-stage="name">1. Name</li>
-          <li data-stage="setup">2. Setup</li>
-          <li data-stage="create">3. Create</li>
-        </ol>
+<body data-view="projects">
+  <div class="app">
+    <aside class="sidebar" aria-label="Main">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><img src="assets/logo-stack.png" alt=""></span>
+        <span class="brand-name">envhub</span>
       </div>
 
-      <form id="stage-name" class="stage">
-        <fieldset class="options">
-          <legend>Which project?</legend>
-          <label><input type="radio" name="project-source" value="new" checked> New project (envhub creates the folder)</label>
-          <label><input type="radio" name="project-source" value="existing"> Existing project (a folder I already have, for example a git clone)</label>
-        </fieldset>
-        <div id="existing-fields" hidden>
-          <div class="field-row">
-            <input id="existing-folder" type="text" placeholder="full path, e.g. C:/laragon/www/myapp" autocomplete="off">
-            <button type="button" id="pick-folder">Browse...</button>
+      <button type="button" class="nav-item" id="nav-projects" data-view="projects" aria-current="page">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"></rect><rect x="14" y="3" width="7" height="7" rx="2"></rect><rect x="3" y="14" width="7" height="7" rx="2"></rect><rect x="14" y="14" width="7" height="7" rx="2"></rect></svg>
+        <span>Projects</span>
+        <span class="nav-count" id="nav-count">0</span>
+      </button>
+      <button type="button" class="nav-item" id="nav-new" data-view="new">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        <span>New project</span>
+      </button>
+      <button type="button" class="nav-item" id="nav-system" data-view="system">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16v10H4z"></path><path d="M8 11h.01M12 11h.01M16 11h.01"></path></svg>
+        <span>Containers</span>
+      </button>
+
+      <button type="button" class="nav-item" id="nav-settings" data-view="settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"></path></svg>
+        <span>Settings</span>
+      </button>
+
+      <div class="sidebar-foot">
+        <span id="app-info" class="muted">Loading...</span>
+      </div>
+    </aside>
+
+    <main class="shell">
+      <div class="content">
+
+        <section class="card view-projects" id="docker-card" aria-live="polite">
+          <div class="card-head">
+            <div class="docker-head">
+              <span class="docker-mark" id="docker-mark" data-state="checking"><svg viewBox="0 0 32 32" width="30" height="30" fill="currentColor" aria-hidden="true"><rect x="10.2" y="12" width="3.4" height="3.2" rx="0.5"></rect><rect x="14.2" y="12" width="3.4" height="3.2" rx="0.5"></rect><rect x="18.2" y="12" width="3.4" height="3.2" rx="0.5"></rect><rect x="14.2" y="8.4" width="3.4" height="3.2" rx="0.5"></rect><rect x="6.2" y="12" width="3.4" height="3.2" rx="0.5"></rect><rect x="22.2" y="12" width="3.4" height="3.2" rx="0.5"></rect><path d="M2.2 17.1h24.6c1.3-.1 2.4-.8 3-2 .4.2.9.5 1.2 1-.4 1-1.4 1.6-2.4 1.8-1.3 4.7-5.6 8.6-12.9 8.6-6.5 0-11.2-3.6-13.5-9.4z"></path></svg></span>
+              <div class="docker-text">
+                <h2 id="docker-title" class="status-title">Checking Docker...</h2>
+                <p id="docker-detail" class="muted small"></p>
+              </div>
+            </div>
+            <button id="check-again" type="button">Check again</button>
           </div>
-          <p class="muted small">envhub reads this folder and runs it in Docker. Your files stay where they are and are never deleted. For Laravel without a vendor folder, envhub runs composer install.</p>
-        </div>
-        <div class="field-row">
-          <input id="new-name" type="text" placeholder="project name, e.g. shop" autocomplete="off" required>
-          <button type="submit">Next</button>
-        </div>
-        <div id="projects-dir-row" class="dir-row">
-          <span class="muted small">New projects are saved in:</span>
-          <strong id="projects-dir" class="dir-path"></strong>
-          <button type="button" id="change-projects-dir">Change folder...</button>
-          <button type="button" id="reset-projects-dir" hidden>Use the default</button>
-        </div>
-        <p id="projects-dir-note" class="muted small">Projects you made earlier stay where they are. For a project you already have, use "Existing project" above.</p>
-        <p id="name-error" class="error small" hidden></p>
-      </form>
+          <div id="docker-guidance" class="guidance" hidden></div>
+          <img id="docker-art" class="art-panel docker-art" src="assets/empty-docker.png" alt="" hidden>
+        </section>
 
-      <form id="stage-setup" class="stage" hidden>
-        <p class="muted">Project: <strong id="setup-name"></strong></p>
-        <div class="field-row">
-          <select id="new-stack" aria-label="Stack">
-            <option value="laravel">Laravel</option>
-            <option value="nestjs">NestJS</option>
-            <option value="nextjs">Next.js</option>
-            <option value="vue">Vue.js</option>
-            <option value="nuxt">Nuxt.js</option>
-            <option value="docker">Docker image (Docker Hub)</option>
-          </select>
-          <select id="new-version" aria-label="Version"></select>
-        </div>
-
-        <fieldset id="install-choice" class="options">
-          <legend>Do you want to install the app now?</legend>
-          <label><input type="radio" name="install-app" value="yes" checked> <span id="install-yes-text"></span></label>
-          <label><input type="radio" name="install-app" value="no"> <span id="install-no-text"></span></label>
-        </fieldset>
-
-        <div id="docker-fields" class="docker-fields" hidden>
-          <div class="field-row">
-            <input id="docker-image" type="text" placeholder="search Docker Hub, e.g. python, node, golang" autocomplete="off">
-            <select id="docker-tag" aria-label="Tag" hidden></select>
+        <section class="card narrow view-projects" id="start-card" hidden>
+          <div class="card-head">
+            <h2>Starting</h2>
+            <button id="close-start" type="button">Close</button>
           </div>
-          <ul id="docker-suggestions" class="suggestions plain" hidden></ul>
-          <p id="docker-hint" class="muted small"></p>
-          <div id="keep-packages-row" hidden>
-            <label><input type="checkbox" id="keep-packages" checked> Keep installed <span id="keep-packages-text">Python</span> packages (also the ones you install by hand with docker exec) after a restart</label>
-            <p class="muted small">Packages are stored in a Docker volume (pip for Python, node_modules for Node.js, modules for Go, crates for Rust, .m2 for Maven, gems for Ruby). Turn it off for a fresh install every time. You can change this later in Edit services.</p>
+          <div id="start-progress"></div>
+        </section>
+
+        <section class="card narrow view-new" id="create-card">
+          <div class="card-head">
+            <h2>New project</h2>
+            <ol class="stages" id="stages" aria-label="Steps">
+              <li data-stage="name">1. Name</li>
+              <li data-stage="setup">2. Setup</li>
+              <li data-stage="create">3. Create</li>
+            </ol>
           </div>
-          <div class="field-row">
-            <input id="docker-port" type="number" min="1" max="65535" placeholder="port (optional, automatic if empty), e.g. 8000">
-            <input id="docker-command" type="text" placeholder="start command (optional), e.g. python app.py" autocomplete="off">
+
+          <form id="stage-name" class="stage">
+            <fieldset class="options">
+              <legend>Which project?</legend>
+              <label><input type="radio" name="project-source" value="new" checked> New project (envhub creates the folder)</label>
+              <label><input type="radio" name="project-source" value="existing"> Existing project (a folder I already have, for example a git clone)</label>
+            </fieldset>
+            <div id="existing-fields" hidden>
+              <div class="field-row">
+                <input id="existing-folder" type="text" placeholder="full path, e.g. C:/laragon/www/myapp" autocomplete="off">
+                <button type="button" id="pick-folder">Browse...</button>
+              </div>
+              <p class="muted small">envhub reads this folder and runs it in Docker. Your files stay where they are and are never deleted. For Laravel without a vendor folder, envhub runs composer install.</p>
+            </div>
+            <div class="field-row">
+              <input id="new-name" type="text" placeholder="project name, e.g. shop" autocomplete="off" required>
+              <button type="submit" class="primary">Next</button>
+            </div>
+            <div id="projects-dir-row" class="dir-row">
+              <span class="muted small">New projects are saved in:</span>
+              <strong id="projects-dir" class="dir-path"></strong>
+              <button type="button" id="change-projects-dir">Change folder...</button>
+              <button type="button" id="reset-projects-dir" hidden>Use the default</button>
+            </div>
+            <p id="projects-dir-note" class="muted small">Projects you made earlier stay where they are. For a project you already have, use "Existing project" above.</p>
+            <p id="name-error" class="error small" hidden></p>
+          </form>
+
+          <form id="stage-setup" class="stage" hidden>
+            <p class="muted">Project: <strong id="setup-name"></strong></p>
+            <div class="field-row">
+              <select id="new-stack" aria-label="Stack">
+                <option value="laravel">Laravel</option>
+                <option value="nestjs">NestJS</option>
+                <option value="nextjs">Next.js</option>
+                <option value="vue">Vue.js</option>
+                <option value="nuxt">Nuxt.js</option>
+                <option value="docker">Docker image (Docker Hub)</option>
+              </select>
+              <select id="new-version" aria-label="Version"></select>
+            </div>
+
+            <fieldset id="install-choice" class="options">
+              <legend>Do you want to install the app now?</legend>
+              <label><input type="radio" name="install-app" value="yes" checked> <span id="install-yes-text"></span></label>
+              <label><input type="radio" name="install-app" value="no"> <span id="install-no-text"></span></label>
+            </fieldset>
+
+            <div id="docker-fields" class="docker-fields" hidden>
+              <div class="field-row">
+                <input id="docker-image" type="text" placeholder="search Docker Hub, e.g. python, node, golang" autocomplete="off">
+                <select id="docker-tag" aria-label="Tag" hidden></select>
+              </div>
+              <ul id="docker-suggestions" class="suggestions plain" hidden></ul>
+              <p id="docker-hint" class="muted small"></p>
+              <div id="keep-packages-row" hidden>
+                <label><input type="checkbox" id="keep-packages" checked> Keep installed <span id="keep-packages-text">Python</span> packages (also the ones you install by hand with docker exec) after a restart</label>
+                <p class="muted small">Packages are stored in a Docker volume (pip for Python, node_modules for Node.js, modules for Go, crates for Rust, .m2 for Maven, gems for Ruby). Turn it off for a fresh install every time. You can change this later in Edit services.</p>
+              </div>
+              <div class="field-row">
+                <input id="docker-port" type="number" min="1" max="65535" placeholder="port (optional, automatic if empty), e.g. 8000">
+                <input id="docker-command" type="text" placeholder="start command (optional), e.g. python app.py" autocomplete="off">
+              </div>
+              <p id="docker-error" class="error small" hidden></p>
+            </div>
+
+            <fieldset id="service-options" class="options tiles">
+              <legend id="options-legend">Services</legend>
+              <label><input type="checkbox" id="opt-mysql"> MySQL <select id="ver-mysql" class="ver-select" aria-label="MySQL version"></select></label>
+              <label><input type="checkbox" id="opt-postgres"> PostgreSQL <select id="ver-postgres" class="ver-select" aria-label="PostgreSQL version"></select></label>
+              <label><input type="checkbox" id="opt-mongodb"> MongoDB <select id="ver-mongodb" class="ver-select" aria-label="MongoDB version"></select></label>
+              <label><input type="checkbox" id="opt-redis"> Redis <select id="ver-redis" class="ver-select" aria-label="Redis version"></select></label>
+              <label><input type="checkbox" id="opt-phpmyadmin"> phpMyAdmin</label>
+              <label><input type="checkbox" id="opt-adminer"> Adminer</label>
+              <label><input type="checkbox" id="opt-mailpit"> Mailpit</label>
+              <label><input type="checkbox" id="opt-node"> Node (npm, Vite)</label>
+            </fieldset>
+            <p id="options-note" class="muted small"></p>
+
+            <div id="new-db" class="env-menu-field">
+              <label for="new-db-user">Database user (the app connects with this name)</label>
+              <input id="new-db-user" class="env-menu-input" type="text" placeholder="app" autocomplete="off">
+              <label for="new-db-name">Database name (MySQL, PostgreSQL)</label>
+              <input id="new-db-name" class="env-menu-input" type="text" placeholder="app" autocomplete="off">
+              <label for="new-db-pass">Database password (app user, MySQL, PostgreSQL, MongoDB)</label>
+              <input id="new-db-pass" class="env-menu-input" type="text" placeholder="empty = default password" autocomplete="off">
+              <p class="muted small">Used only if MySQL, PostgreSQL or MongoDB is ticked. Lowercase letters, digits and _ for the name. Letters, digits, _ . - for the password (4 to 64).</p>
+            </div>
+
+            <div id="suggestions" class="suggested" hidden>
+              <span class="muted small">Suggested for this project:</span>
+              <span id="suggestion-chips" class="chips"></span>
+            </div>
+            <div id="extra-services" class="extra-services"></div>
+            <button type="button" id="add-service">+ Add more services</button>
+            <p class="muted small">Extra services use any Docker Hub image. Passwords you type here are for local development only. The data of known databases and stores (MariaDB, RabbitMQ, Elasticsearch, MinIO, Meilisearch and others) is kept in a Docker volume, so it stays after a restart.</p>
+
+            <div class="stage-actions">
+              <button type="button" id="setup-back">Back</button>
+              <button type="submit" class="primary">Create project</button>
+            </div>
+          </form>
+
+          <div id="stage-create" class="stage" hidden>
+            <div id="create-progress"></div>
+            <p id="create-message" class="muted small" aria-live="polite"></p>
+            <div class="stage-actions" id="create-actions" hidden>
+              <button type="button" id="create-open" class="primary">Open</button>
+              <button type="button" id="create-connection">Connection</button>
+              <button type="button" id="create-retry">Try again</button>
+              <button type="button" id="create-another">Create another project</button>
+              <button type="button" id="create-done">Done</button>
+            </div>
           </div>
-          <p id="docker-error" class="error small" hidden></p>
-        </div>
+        </section>
 
-        <fieldset id="service-options" class="options">
-          <legend id="options-legend">Services</legend>
-          <label><input type="checkbox" id="opt-mysql"> MySQL <select id="ver-mysql" class="ver-select" aria-label="MySQL version"></select></label>
-          <label><input type="checkbox" id="opt-postgres"> PostgreSQL <select id="ver-postgres" class="ver-select" aria-label="PostgreSQL version"></select></label>
-          <label><input type="checkbox" id="opt-mongodb"> MongoDB <select id="ver-mongodb" class="ver-select" aria-label="MongoDB version"></select></label>
-          <label><input type="checkbox" id="opt-redis"> Redis <select id="ver-redis" class="ver-select" aria-label="Redis version"></select></label>
-          <label><input type="checkbox" id="opt-phpmyadmin"> phpMyAdmin</label>
-          <label><input type="checkbox" id="opt-adminer"> Adminer</label>
-          <label><input type="checkbox" id="opt-mailpit"> Mailpit</label>
-          <label><input type="checkbox" id="opt-node"> Node (npm, Vite)</label>
-        </fieldset>
-        <p id="options-note" class="muted small"></p>
+        <section class="card bare view-projects" id="projects-card">
+          <div class="page-head">
+            <div>
+              <h1>Projects</h1>
+              <p>Everything runs in Docker. Start, open and stop with one click.</p>
+            </div>
+            <div class="row-actions">
+              <button id="versions-file-btn" type="button" title="Add PHP, Node, MySQL... versions without changing any code">Versions file</button>
+              <button id="new-project-btn" type="button" class="primary">+ New project</button>
+            </div>
+          </div>
+          <p id="versions-warning" class="error small" hidden></p>
 
-        <div id="new-db" class="env-menu-field">
-          <label for="new-db-user">Database user (the app connects with this name)</label>
-          <input id="new-db-user" class="env-menu-input" type="text" placeholder="app" autocomplete="off">
-          <label for="new-db-name">Database name (MySQL, PostgreSQL)</label>
-          <input id="new-db-name" class="env-menu-input" type="text" placeholder="app" autocomplete="off">
-          <label for="new-db-pass">Database password (app user, MySQL, PostgreSQL, MongoDB)</label>
-          <input id="new-db-pass" class="env-menu-input" type="text" placeholder="empty = default password" autocomplete="off">
-          <p class="muted small">Used only if MySQL, PostgreSQL or MongoDB is ticked. Lowercase letters, digits and _ for the name. Letters, digits, _ . - for the password (4 to 64).</p>
-        </div>
+          <div class="stats">
+            <div class="stat">
+              <span class="stat-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"></rect><rect x="14" y="3" width="7" height="7" rx="2"></rect><rect x="3" y="14" width="7" height="7" rx="2"></rect><rect x="14" y="14" width="7" height="7" rx="2"></rect></svg></span>
+              <span><span class="stat-value" id="stat-total">0</span><br><span class="stat-label">Projects</span></span>
+            </div>
+            <div class="stat">
+              <span class="stat-icon ok" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l12-7z"></path></svg></span>
+              <span><span class="stat-value" id="stat-running">0</span><br><span class="stat-label">Running</span></span>
+            </div>
+            <div class="stat">
+              <span class="stat-icon warn" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 1 0 0 18z"></path></svg></span>
+              <span><span class="stat-value" id="stat-partly">0</span><br><span class="stat-label">Partly running</span></span>
+            </div>
+            <div class="stat">
+              <span class="stat-icon stop" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"></rect></svg></span>
+              <span><span class="stat-value" id="stat-stopped">0</span><br><span class="stat-label">Stopped</span></span>
+            </div>
+          </div>
 
-        <div id="suggestions" class="suggested" hidden>
-          <span class="muted small">Suggested for this project:</span>
-          <span id="suggestion-chips" class="chips"></span>
-        </div>
-        <div id="extra-services" class="extra-services"></div>
-        <button type="button" id="add-service">+ Add more services</button>
-        <p class="muted small">Extra services use any Docker Hub image. Passwords you type here are for local development only. The data of known databases and stores (MariaDB, RabbitMQ, Elasticsearch, MinIO, Meilisearch and others) is kept in a Docker volume, so it stays after a restart.</p>
+          <div class="toolbar">
+            <div class="seg" role="group" aria-label="Filter by status">
+              <button type="button" id="filter-all" aria-pressed="true">All</button>
+              <button type="button" id="filter-active" aria-pressed="false">Active</button>
+              <button type="button" id="filter-stopped" aria-pressed="false">Stopped</button>
+            </div>
+            <input id="project-search" class="search" type="search" placeholder="Search projects" aria-label="Search projects" autocomplete="off">
+          </div>
 
-        <div class="stage-actions">
-          <button type="button" id="setup-back">Back</button>
-          <button type="submit">Create project</button>
-        </div>
-      </form>
+          <div id="project-list" class="project-grid"></div>
+          <div id="action-status" class="note-box" role="status" aria-live="polite" hidden></div>
+        </section>
 
-      <div id="stage-create" class="stage" hidden>
-        <div id="create-progress"></div>
-        <p id="create-message" class="muted small" aria-live="polite"></p>
-        <div class="stage-actions" id="create-actions" hidden>
-          <button type="button" id="create-open">Open</button>
-          <button type="button" id="create-connection">Connection</button>
-          <button type="button" id="create-retry">Try again</button>
-          <button type="button" id="create-another">Create another project</button>
-          <button type="button" id="create-done">Done</button>
-        </div>
+        <section class="card bare view-detail" id="detail-card">
+          <div class="detail-top">
+            <button type="button" class="link-back" id="detail-back">&larr; All projects</button>
+          </div>
+          <div class="detail-hero">
+            <div class="hero-main">
+              <div id="detail-mark" class="pcard-mark" aria-hidden="true"></div>
+              <div class="hero-text">
+                <div class="hero-title">
+                  <h1 id="detail-name">Project</h1>
+                  <span id="detail-status" class="status status-stopped"></span>
+                  <span id="detail-uptime" class="muted small"></span>
+                </div>
+                <p id="detail-stack" class="muted small"></p>
+                <button type="button" class="link-url" id="detail-url" hidden></button>
+                <div class="lan-line" id="detail-lan" hidden>
+                  <span class="lan-label">On your network</span>
+                  <button type="button" class="link-url lan-url" id="detail-lan-url" title="Click to copy"></button>
+                </div>
+              </div>
+            </div>
+            <div class="row-actions">
+              <button type="button" id="detail-primary" class="primary">Start</button>
+              <button type="button" id="detail-terminal"><svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 17 6-6-6-6"></path><path d="M12 19h8"></path></svg><span>Terminal</span></button>
+              <button type="button" id="detail-restart"><svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg><span>Restart</span></button>
+              <button type="button" id="detail-stop"><svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"></rect></svg><span>Stop</span></button>
+            </div>
+          </div>
+          <div id="detail-note" class="note-box" role="status" aria-live="polite" hidden></div>
+          <div id="detail-stats" class="stats"></div>
+
+          <div class="tabs" role="tablist" aria-label="Project sections">
+            <button type="button" role="tab" class="tab" data-tab="overview" aria-selected="true">Overview</button>
+            <button type="button" role="tab" class="tab" data-tab="services" aria-selected="false">Services</button>
+            <button type="button" role="tab" class="tab" data-tab="volumes" aria-selected="false">Volumes</button>
+            <button type="button" role="tab" class="tab" data-tab="logs" aria-selected="false">Logs</button>
+            <button type="button" role="tab" class="tab" data-tab="credentials" aria-selected="false">Credentials &amp; .env</button>
+            <button type="button" role="tab" class="tab" data-tab="settings" aria-selected="false">Settings</button>
+          </div>
+          <div id="detail-overview" class="ov-grid"></div>
+          <div id="detail-panel" class="detail-panel"></div>
+        </section>
+
+        <section class="card bare view-settings" id="settings-card">
+          <div class="page-head">
+            <div>
+              <h1>Settings</h1>
+              <p>App settings. Settings for one project are in its Settings tab.</p>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Appearance</h2>
+            <p class="muted small">Light, dark, or follow this computer.</p>
+            <div class="seg" role="group" aria-label="Theme">
+              <button type="button" data-theme-choice="system" aria-pressed="true">System</button>
+              <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
+              <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Projects folder</h2>
+            <p class="muted small">New projects are saved in this folder. Projects you made earlier stay where they are.</p>
+            <p><strong id="settings-projects-dir" class="dir-path"></strong></p>
+            <div class="row-actions">
+              <button type="button" id="settings-change-dir">Change folder...</button>
+              <button type="button" id="settings-reset-dir" hidden>Use the default</button>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Versions</h2>
+            <p class="muted small">Add PHP, Node, MySQL and other versions without changing any code.</p>
+            <div class="row-actions">
+              <button type="button" id="settings-versions-btn">Versions file</button>
+            </div>
+            <p id="settings-message" class="muted small" aria-live="polite"></p>
+          </div>
+          <div class="card">
+            <h2>About</h2>
+            <div class="about-row">
+              <img class="about-logo" src="assets/logo.png" alt="">
+              <p id="settings-about" class="muted small">Loading...</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="card narrow view-projects" id="edit-card" hidden>
+          <div class="card-head">
+            <h2 id="edit-title">Edit services</h2>
+            <button id="edit-close" type="button">Close</button>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-head">
+              <h3>Services</h3>
+              <p class="muted small">Tick what this project needs. Each database can have its own version.</p>
+            </div>
+            <fieldset id="edit-options" class="options tiles">
+              <legend class="sr-only">Services</legend>
+            </fieldset>
+          </div>
+
+          <div id="edit-db" class="form-section" hidden>
+            <div class="form-section-head">
+              <h3>Database login</h3>
+              <p class="muted small">Your data stays. The new name and password are used when the project starts (Save and apply). The root password does not change.</p>
+            </div>
+            <div class="form-grid">
+              <div class="field">
+                <label for="edit-db-user">User</label>
+                <input id="edit-db-user" class="env-menu-input" type="text" placeholder="app" autocomplete="off">
+                <span class="hint">The app connects with this name</span>
+              </div>
+              <div class="field">
+                <label for="edit-db-name">Database name</label>
+                <input id="edit-db-name" class="env-menu-input" type="text" placeholder="app" autocomplete="off">
+                <span class="hint">MySQL and PostgreSQL</span>
+              </div>
+              <div class="field">
+                <label for="edit-db-pass">Password</label>
+                <input id="edit-db-pass" class="env-menu-input" type="text" placeholder="empty = default password" autocomplete="off">
+                <span class="hint">Letters, digits, _ . - (4 to 64)</span>
+              </div>
+            </div>
+          </div>
+
+          <div id="edit-redis" class="form-section" hidden>
+            <div class="form-section-head">
+              <h3>Redis</h3>
+              <p class="muted small">Redis restarts when you apply the change. Its data is a cache, so it is lost on restart.</p>
+            </div>
+            <div class="form-grid">
+              <div class="field">
+                <label for="edit-redis-pass">Password</label>
+                <input id="edit-redis-pass" class="env-menu-input" type="text" placeholder="empty = no password" autocomplete="off">
+                <span class="hint">Letters, digits, _ . - (4 to 64)</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-head">
+              <h3>Options</h3>
+            </div>
+            <label class="switch-row" for="edit-lan">
+              <span class="switch-text">
+                <strong>Share the web page on my Wi-Fi / network</strong>
+                <span class="muted small">Other computers on the same network can open the project page. Databases and admin tools stay on this computer. Use it only on a network you trust. Windows may ask to allow Docker through the firewall: choose Private networks.</span>
+              </span>
+              <input id="edit-lan" type="checkbox" class="switch">
+            </label>
+            <label id="edit-python" class="switch-row" for="edit-keep-packages" hidden>
+              <span class="switch-text">
+                <strong>Keep installed <span id="edit-keep-packages-text">Python</span> packages after a restart</strong>
+                <span class="muted small">Packages (also the ones installed by hand with docker exec) are kept in a Docker volume. Packages already in the old container are not moved: install them again once.</span>
+              </span>
+              <input id="edit-keep-packages" type="checkbox" class="switch">
+            </label>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-head">
+              <h3>Extra services</h3>
+              <p class="muted small">Any image from Docker Hub, with ports, environment variables and a start command.</p>
+            </div>
+            <div id="edit-extras" class="extra-services"></div>
+            <button type="button" id="edit-add-service" class="add-row">+ Add a service</button>
+            <p class="muted small">Removing a service deletes its container, but its saved data stays until the project is deleted. Changing a database version keeps its data; a newer major version can need a backup first.</p>
+          </div>
+
+          <p id="edit-error" class="error small" hidden></p>
+          <p id="edit-message" class="muted small" aria-live="polite"></p>
+          <div class="stage-actions form-actions">
+            <button type="button" id="edit-save">Save</button>
+            <button type="button" id="edit-apply" class="primary">Save and apply</button>
+          </div>
+          <div id="edit-progress" hidden></div>
+        </section>
+
+        <section class="card narrow view-projects" id="links-card" hidden>
+          <div class="card-head">
+            <h2 id="links-title">Links &amp; commands</h2>
+            <div class="row-actions">
+              <button id="links-refresh" type="button">Refresh</button>
+              <button id="links-close" type="button">Close</button>
+            </div>
+          </div>
+          <p id="links-note" class="muted small"></p>
+          <h3 class="section-title">Services</h3>
+          <div id="links-services" class="lk-grid"></div>
+          <h3 class="section-title">Commands for the whole project</h3>
+          <div id="links-commands" class="lk-cmds"></div>
+          <p id="links-message" class="muted small" aria-live="polite"></p>
+        </section>
+
+        
+
+        <section class="card narrow view-projects" id="volumes-card" hidden>
+          <div class="card-head">
+            <h2 id="volumes-title">Volumes</h2>
+            <div class="row-actions">
+              <button id="volumes-refresh" type="button">Refresh</button>
+              <button id="volumes-close" type="button">Close</button>
+            </div>
+          </div>
+          <div id="volumes-body" class="vol-body"></div>
+        </section>
+
+        <section class="card narrow view-projects" id="logs-card" hidden>
+          <div class="card-head">
+            <h2 id="logs-title">Logs</h2>
+            <div class="row-actions">
+              <button id="logs-refresh" type="button">Refresh</button>
+              <button id="logs-copy" type="button">Copy</button>
+              <button id="copy-env-docker" type="button" hidden>Copy .env (Docker)</button>
+              <button id="copy-env-host" type="button" hidden>Copy .env (my computer)</button>
+              <button id="write-env-docker" type="button" hidden>Write .env to folder (Docker)</button>
+              <button id="write-env-host" type="button" hidden>Write .env to folder (my computer)</button>
+              <button id="close-logs" type="button">Close</button>
+            </div>
+          </div>
+          <pre id="logs-output" class="logs"></pre>
+        </section>
+
+        <section class="card narrow view-projects" id="cred-card" hidden>
+          <div class="card-head">
+            <h2 id="cred-title">Credentials &amp; .env</h2>
+            <button id="cred-close" type="button">Close</button>
+          </div>
+          <div id="cred-body" class="cred-body"></div>
+        </section>
+
+        <section class="card view-system" id="containers-card">
+          <div class="card-head">
+            <h2>Containers</h2>
+            <button id="refresh-containers" type="button">Refresh</button>
+          </div>
+          <ul id="container-list" class="plain"></ul>
+        </section>
+
       </div>
-    </section>
-
-    <section class="card" id="projects-card">
-      <div class="card-head">
-        <h2>Projects</h2>
-        <div class="row-actions">
-          <button id="versions-file-btn" type="button" title="Add PHP, Node, MySQL... versions without changing any code">Versions file</button>
-          <button id="new-project-btn" type="button">New project</button>
-        </div>
+    </main>
+  </div>
+  <div class="modal-backdrop" id="confirm-modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <h2 id="confirm-title">Delete project?</h2>
+      <div id="confirm-body" class="modal-body"></div>
+      <div class="modal-actions">
+        <button type="button" id="confirm-cancel">Cancel</button>
+        <button type="button" id="confirm-ok" class="danger-solid">Delete project</button>
       </div>
-      <p id="versions-warning" class="error small" hidden></p>
-      <div id="project-list"></div>
-      <p id="action-status" class="muted" aria-live="polite"></p>
-    </section>
-
-    <section class="card" id="edit-card" hidden>
-      <div class="card-head">
-        <h2 id="edit-title">Edit services</h2>
-        <button id="edit-close" type="button">Close</button>
-      </div>
-
-      <fieldset id="edit-options" class="options">
-        <legend>Services</legend>
-      </fieldset>
-
-      <div id="edit-db" class="env-menu-field" hidden>
-        <label for="edit-db-user">Database user (the app connects with this name)</label>
-        <input id="edit-db-user" class="env-menu-input" type="text" placeholder="app" autocomplete="off">
-        <label for="edit-db-name">Database name (MySQL / PostgreSQL)</label>
-        <input id="edit-db-name" class="env-menu-input" type="text" placeholder="app" autocomplete="off">
-        <label for="edit-db-pass">Database password (app user)</label>
-        <input id="edit-db-pass" class="env-menu-input" type="text" placeholder="empty = default password" autocomplete="off">
-        <p class="muted small">Lowercase letters, digits and _ for the name. Letters, digits, _ . - for the password (4 to 64). Your data stays. The name and the password are applied when the project starts (Save and apply). The root password does not change.</p>
-      </div>
-
-      <div id="edit-redis" class="env-menu-field" hidden>
-        <label for="edit-redis-pass">Redis password</label>
-        <input id="edit-redis-pass" class="env-menu-input" type="text" placeholder="empty = no password" autocomplete="off">
-        <p class="muted small">Letters, digits, _ . - (4 to 64). Redis restarts when you apply the change. Redis data is a cache, so it is lost on restart.</p>
-      </div>
-
-      <div class="env-menu-field">
-        <label class="keep-data" for="edit-lan"><input id="edit-lan" type="checkbox"> Share the web page on my Wi-Fi / network</label>
-        <p class="muted small">Other computers on the same Wi-Fi can open the project page with your computer's address. Only the project web page is shared. Databases and admin tools stay on this computer. Anyone on that network can open it, so use it only on a network you trust. Windows may ask to allow Docker through the firewall, choose Private networks. Needs Save and apply.</p>
-      </div>
-
-      <div id="edit-python" class="env-menu-field" hidden>
-        <label class="keep-data" for="edit-keep-packages"><input id="edit-keep-packages" type="checkbox"> Keep installed <span id="edit-keep-packages-text">Python</span> packages after a restart</label>
-        <p class="muted small">Packages (also the ones installed by hand with docker exec) are stored in a Docker volume. Needs Save and apply. Packages already installed in the old container are not moved: install them again once.</p>
-      </div>
-
-      <div id="edit-extras" class="extra-services"></div>
-      <button type="button" id="edit-add-service">+ Add more services</button>
-      <p class="muted small">Removing a service deletes its container, but its saved data stays until the project is deleted. Changing the version of a database keeps its data. Going to a newer major version can need a backup first, and going back to an older one usually does not work.</p>
-
-      <p id="edit-error" class="error small" hidden></p>
-      <p id="edit-message" class="muted small" aria-live="polite"></p>
-      <div class="stage-actions">
-        <button type="button" id="edit-save">Save</button>
-        <button type="button" id="edit-apply">Save and apply</button>
-      </div>
-      <div id="edit-progress" hidden></div>
-    </section>
-
-    <section class="card" id="links-card" hidden>
-      <div class="card-head">
-        <h2 id="links-title">Links &amp; commands</h2>
-        <div class="row-actions">
-          <button id="links-refresh" type="button">Refresh</button>
-          <button id="links-close" type="button">Close</button>
-        </div>
-      </div>
-      <p id="links-note" class="muted small"></p>
-      <h3>Services</h3>
-      <div id="links-services"></div>
-      <h3>Commands for the whole project</h3>
-      <div id="links-commands"></div>
-      <p id="links-message" class="muted small" aria-live="polite"></p>
-    </section>
-
-    <section class="card" id="start-card" hidden>
-      <div class="card-head">
-        <h2>Starting</h2>
-        <button id="close-start" type="button">Close</button>
-      </div>
-      <div id="start-progress"></div>
-    </section>
-
-    <section class="card" id="logs-card" hidden>
-      <div class="card-head">
-        <h2 id="logs-title">Logs</h2>
-        <div>
-          <button id="copy-env-docker" type="button" hidden>Copy .env (Docker)</button>
-          <button id="copy-env-host" type="button" hidden>Copy .env (my computer)</button>
-          <button id="write-env-docker" type="button" hidden>Write .env to folder (Docker)</button>
-          <button id="write-env-host" type="button" hidden>Write .env to folder (my computer)</button>
-          <button id="close-logs" type="button">Close</button>
-        </div>
-      </div>
-      <pre id="logs-output" class="logs"></pre>
-    </section>
-
-    <section class="card" id="containers-card">
-      <div class="card-head">
-        <h2>Containers</h2>
-        <button id="refresh-containers" type="button">Refresh</button>
-      </div>
-      <ul id="container-list" class="plain"></ul>
-    </section>
-  </main>
+    </div>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>

@@ -375,3 +375,65 @@ test('menu has the planned entries, and the document view turns Markdown into sa
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /x &lt; y/);
 });
+
+test('connectionData gives the Credentials tab the same facts as the text, as data', () => {
+  const { connectionData } = require('../main/stacks/connection');
+  const config = {
+    stack: 'nextjs',
+    services: [
+      { name: 'node', image: 'node:22' },
+      { name: 'mysql', image: 'mysql:8.0' },
+      { name: 'redis', image: 'redis:7' },
+      { name: 'phpmyadmin', image: 'phpmyadmin:5' },
+      { name: 'rabbitmq', image: 'rabbitmq:3', env: { RABBITMQ_DEFAULT_PASS: 'rb' } },
+    ],
+  };
+  const ports = [
+    { service: 'mysql', container: 3306, host: 3307 },
+    { service: 'redis', container: 6379, host: 6380 },
+    { service: 'phpmyadmin', container: 80, host: 8081 },
+    { service: 'rabbitmq', container: 15672, host: 15672 },
+  ];
+  const data = connectionData({ config, ports, password: 'apppw', rootPassword: 'rootpw', dbName: 'shop', dbUser: 'shopper' });
+  assert.match(data.env.docker, /DB_HOST=mysql/);
+  assert.match(data.env.host, /DB_HOST=localhost/);
+  assert.match(data.env.host, /DB_PORT=3307/);
+  const mysql = data.databases.find((d) => d.key === 'mysql');
+  assert.deepStrictEqual([mysql.host, mysql.port, mysql.database, mysql.user, mysql.password, mysql.rootPassword], ['localhost', '3307', 'shop', 'shopper', 'apppw', 'rootpw']);
+  const redis = data.databases.find((d) => d.key === 'redis');
+  assert.strictEqual(redis.note, 'No password');
+  assert.deepStrictEqual(data.pages.map((p) => [p.service, p.url]), [['phpmyadmin', 'http://localhost:8081']]);
+  assert.deepStrictEqual(data.extras, [{ name: 'rabbitmq', image: 'rabbitmq:3', ports: [{ host: 15672, container: 15672 }], env: { RABBITMQ_DEFAULT_PASS: 'rb' } }]);
+});
+
+test('tray menu: Open envhub and Exit', () => {
+  const { trayTemplate } = require('../main/tray');
+  const calls = [];
+  const items = trayTemplate({ show: () => calls.push('show'), quit: () => calls.push('quit') });
+  const labels = items.filter((i) => i.label).map((i) => i.label);
+  assert.deepStrictEqual(labels, ['Open envhub', 'Exit']);
+  items.find((i) => i.label === 'Exit').click();
+  items.find((i) => i.label === 'Open envhub').click();
+  assert.deepStrictEqual(calls, ['quit', 'show']);
+});
+
+test('describeVolumes lists data and cache volumes with their sizes, and the shared folders', () => {
+  const { describeVolumes } = require('../main/stacks/volumes');
+  const config = {
+    services: [
+      { name: 'node', volumes: [{ source: 'C:/p/web', target: '/app' }], dataVolumes: [{ name: 'node-modules', target: '/app/node_modules' }] },
+      { name: 'mysql', dataVolumes: [{ name: 'data', target: '/var/lib/mysql' }] },
+      { name: 'mariadb', dataVolumes: [{ name: 'data', target: '/var/lib/mysql' }] },
+      { name: 'redis' },
+    ],
+  };
+  const out = describeVolumes(config, 'web', ['envhub-web-mysql-data'], [{ name: 'envhub-web-mysql-data', bytes: 5000 }]);
+  assert.deepStrictEqual(out.volumes.map((v) => [v.name, v.kind, v.exists, v.bytes]), [
+    ['envhub-web-node-node-modules', 'cache', false, null],
+    ['envhub-web-mysql-data', 'data', true, 5000],
+    ['envhub-web-mariadb-data', 'data', false, null],
+  ]);
+  assert.strictEqual(out.totalBytes, 5000);
+  assert.deepStrictEqual(out.folders, [{ service: 'node', source: 'C:/p/web', target: '/app' }]);
+  assert.deepStrictEqual(describeVolumes({ services: [] }, 'x'), { volumes: [], folders: [], totalBytes: 0 });
+});

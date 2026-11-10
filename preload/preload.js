@@ -17,6 +17,7 @@ const INVOKE = {
   projectLogs: 'project:logs',
   deleteProject: 'project:delete',
   projectConnection: 'project:connection',
+  projectConnectionData: 'project:connectionData',
   projectEnv: 'project:env',
   writeEnv: 'project:writeEnv',
   getVersions: 'registry:get',
@@ -29,6 +30,10 @@ const INVOKE = {
   updateProject: 'project:update',
   projectLinks: 'project:links',
   openPort: 'project:openPort',
+  projectStats: 'project:stats',
+  projectDisk: 'project:disk',
+  projectVolumes: 'project:volumes',
+  projectShell: 'project:shell',
   installPackages: 'project:installPackages',
   pickFolder: 'project:pickFolder',
   getSettings: 'settings:get',
@@ -60,6 +65,7 @@ contextBridge.exposeInMainWorld('envhub', {
   projectLogs: (name) => ipcRenderer.invoke(INVOKE.projectLogs, name),
   deleteProject: (name, options) => ipcRenderer.invoke(INVOKE.deleteProject, name, options),
   projectConnection: (name) => ipcRenderer.invoke(INVOKE.projectConnection, name),
+  projectConnectionData: (name) => ipcRenderer.invoke(INVOKE.projectConnectionData, name),
   getVersions: () => ipcRenderer.invoke(INVOKE.getVersions),
   openVersionsFile: () => ipcRenderer.invoke(INVOKE.openVersionsFile),
   writeEnv: (name, target) => ipcRenderer.invoke(INVOKE.writeEnv, name, target ?? 'docker'),
@@ -79,6 +85,10 @@ contextBridge.exposeInMainWorld('envhub', {
   importProject: (input) => ipcRenderer.invoke(INVOKE.importProject, input),
   installPackages: (name) => ipcRenderer.invoke(INVOKE.installPackages, name),
   openPort: (name, service, container) => ipcRenderer.invoke(INVOKE.openPort, name, service, container),
+  projectStats: (name) => ipcRenderer.invoke(INVOKE.projectStats, name),
+  projectDisk: (name) => ipcRenderer.invoke(INVOKE.projectDisk, name),
+  projectVolumes: (name) => ipcRenderer.invoke(INVOKE.projectVolumes, name),
+  projectShell: (name, service) => ipcRenderer.invoke(INVOKE.projectShell, name, service),
   onMenuAction: (callback) => {
     const listener = (_event, name) => callback(name);
     ipcRenderer.on(EVENTS.menuAction, listener);

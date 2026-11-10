@@ -1,5 +1,7 @@
 'use strict';
 
+// OLD, NOT USED ANY MORE: this drew a first icon in code. The real pictures now come from build/art/ with
+// scripts/make-brand-assets.js (npm run art). Running this file would overwrite them with the old ones.
 // Draws the installer pictures into build/ with no extra packages (only Node's zlib):
 //   build/icon.png            256x256 app icon (used by electron-builder for the exe)
 //   build/icon.ico            the same, as a Windows icon
