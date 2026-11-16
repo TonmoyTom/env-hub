@@ -17,10 +17,12 @@
   "author": "ProjectDockHub contributors",
   "license": "MIT",
   "devDependencies": {
+    "@electron/fuses": "^2.1.3",
     "electron": "^45.3.2",
     "electron-builder": "^25.1.8"
   },
   "build": {
+    "afterPack": "scripts/after-pack.js",
     "appId": "dev.projectdockhub.app",
     "productName": "ProjectDockHub",
     "files": [
