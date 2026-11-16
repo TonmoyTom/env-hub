@@ -33,8 +33,8 @@ function renderStatus(status) {
   clearGuidance();
   // "Download Docker" is for a computer without Docker.
   el.dockerDownload.hidden = status.reason !== 'not-found';
-  // "Start Docker" is only for Docker Desktop that is installed but closed.
-  el.dockerStart.hidden = !(status.reason === 'daemon-not-running' && (status.platform === 'win32' || status.platform === 'darwin'));
+  // "Start Docker" is for Docker that is installed but not running.
+  el.dockerStart.hidden = !(status.reason === 'daemon-not-running' && status.platform !== '');
 
   if (status.reason === 'not-found') {
     el.title.textContent = 'Docker is not installed';
@@ -3910,4 +3910,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderProjectsLoading();
   loadProjects();
   refreshContainers();
+});
+
+document.querySelectorAll('#winbar [data-menu]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const r = btn.getBoundingClientRect();
+    window.envhub.windowMenu(btn.dataset.menu, r.left, r.bottom);
+  });
+});
+document.querySelectorAll('#winbar [data-win]').forEach((btn) => {
+  btn.addEventListener('click', () => window.envhub.windowControl(btn.dataset.win));
 });

@@ -46,17 +46,19 @@ test('settings: stopping Docker on exit is on by default and the choice is saved
   }
 });
 
-test('start Docker: Windows uses the installed Docker Desktop.exe, Mac uses open, Linux has no button', () => {
+test('start Docker: Windows uses the installed Docker Desktop.exe, Mac uses open, Linux uses systemctl', () => {
   const { launchCommand, startDockerDesktop } = require('../main/docker/launch');
   const env = { ProgramFiles: 'C:\Program Files' };
   const exe = path.join('C:\Program Files', 'Docker', 'Docker', 'Docker Desktop.exe');
   assert.deepStrictEqual(launchCommand('win32', (f) => f === exe, env), { command: exe, args: [] });
   assert.strictEqual(launchCommand('win32', () => false, env), null);
   assert.deepStrictEqual(launchCommand('darwin'), { command: 'open', args: ['-a', 'Docker'] });
-  assert.strictEqual(launchCommand('linux'), null);
+  assert.strictEqual(launchCommand('linux', () => false, { HOME: '/h' }), null);
+  assert.deepStrictEqual(launchCommand('linux', (f) => f === '/usr/bin/pkexec', { HOME: '/h' }), { command: 'pkexec', args: ['systemctl', 'start', 'docker'] });
+  assert.deepStrictEqual(launchCommand('linux', () => true, { HOME: '/h' }), { command: 'systemctl', args: ['--user', 'start', 'docker-desktop'] });
   return startDockerDesktop(undefined, null).then((res) => {
     assert.strictEqual(res.ok, false);
-    assert.match(res.error, /not found/);
+    assert.match(res.error, /could not be started/);
   });
 });
 

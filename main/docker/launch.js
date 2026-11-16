@@ -19,13 +19,22 @@ function launchCommand(platform = process.platform, exists = fs.existsSync, env 
     return exe ? { command: exe, args: [] } : null;
   }
   if (platform === 'darwin') return { command: 'open', args: ['-a', 'Docker'] };
+  if (platform === 'linux') {
+    // Docker Desktop for Linux is a per-user service. Plain Docker Engine is a system service: pkexec
+    // shows the normal password window of the desktop.
+    const home = env.HOME || '';
+    if (home && exists(path.join(home, '.docker', 'desktop')) && exists('/usr/lib/systemd/user/docker-desktop.service')) {
+      return { command: 'systemctl', args: ['--user', 'start', 'docker-desktop'] };
+    }
+    if (exists('/usr/bin/pkexec')) return { command: 'pkexec', args: ['systemctl', 'start', 'docker'] };
+  }
   return null;
 }
 
 // Opens Docker Desktop. It only starts the program: Docker needs a minute to be ready,
 // so the window checks again by itself. Resolves { ok, error? }.
 function startDockerDesktop(spawnFn = spawn, command = launchCommand()) {
-  if (!command) return Promise.resolve({ ok: false, error: 'Docker Desktop was not found. Open it from the Start menu.' });
+  if (!command) return Promise.resolve({ ok: false, error: 'Docker could not be started from here. Start it yourself (for example: sudo systemctl start docker).' });
   return new Promise((resolve) => {
     try {
       const child = spawnFn(command.command, command.args, { detached: true, stdio: 'ignore', windowsHide: false });

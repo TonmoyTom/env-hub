@@ -1,6 +1,13 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, dialog, session } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, session, Menu } = require('electron');
+
+// Linux: the dock finds the app icon through this .desktop name. Started from another app's terminal (VS Code),
+// the window would carry that app's name and be grouped under its icon, so it is always set here.
+if (process.platform === 'linux') {
+  process.env.CHROME_DESKTOP = 'projectdockhub.desktop';
+  if (typeof app.setDesktopName === 'function') app.setDesktopName('projectdockhub.desktop');
+}
 const fs = require('fs');
 const path = require('path');
 const { checkDocker } = require('./docker/check');
@@ -305,6 +312,23 @@ async function runInstall(installOpts, portableSpec) {
 function registerIpcHandlers() {
   handle('app:getInfo', () => ({ name: app.getName(), version: app.getVersion() }));
   handle('docker:check', () => checkDocker());
+  // Window buttons of the Linux title bar (the window has no native one there).
+  handle('window:control', (action) => {
+    if (!mainWindow) return { ok: false };
+    if (action === 'minimize') mainWindow.minimize();
+    else if (action === 'maximize') (mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize());
+    else if (action === 'close') mainWindow.close();
+    else return { ok: false };
+    return { ok: true };
+  });
+  // The Linux title bar has no native menu bar: its File/Edit/... buttons open the same menus here.
+  handle('window:menu', (label, x, y) => {
+    const menu = Menu.getApplicationMenu();
+    const item = menu && menu.items.find((it) => it.label === label);
+    if (!mainWindow || !item || !item.submenu) return { ok: false };
+    item.submenu.popup({ window: mainWindow, x: Math.round(Number(x) || 0), y: Math.round(Number(y) || 0) });
+    return { ok: true };
+  });
   handle('docker:start', () => startDockerDesktop());
   // Opens the official Docker download in the browser (the file goes to the Downloads folder).
   handle('docker:download', async () => {
@@ -1040,6 +1064,11 @@ function createWindow() {
     minHeight: 520,
     title: 'ProjectDockHub',
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
+    // Some Linux desktops (GNOME on Wayland) give the window no title bar, so there is no way to move, minimize
+    // or close it. Draw our own bar with the three window buttons there.
+    ...(process.platform === 'linux'
+      ? { frame: false }
+      : {}),
     webPreferences: {
       preload: PRELOAD_PATH,
       contextIsolation: true,
@@ -1050,6 +1079,16 @@ function createWindow() {
       disableBlinkFeatures: 'Auxclick',
     },
   });
+
+  if (process.platform === 'linux') {
+    // A drag strip across the top (the sidebar and page start below it). insertCSS is not blocked by the page policy.
+    mainWindow.webContents.on('did-finish-load', () => {
+      mainWindow.webContents.insertCSS(
+        'body{padding-top:34px;box-sizing:border-box}.app{min-height:calc(100vh - 34px)}.sidebar{top:34px!important;height:calc(100vh - 34px)!important}' +
+          '.winbar{display:flex!important}',
+      ).catch(() => {});
+    });
+  }
 
   // Block navigation away from the app page and block new windows.
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
