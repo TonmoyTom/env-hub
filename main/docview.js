@@ -118,7 +118,7 @@ function openDocWindow(parent, title, file) {
     height: 760,
     title,
     autoHideMenuBar: true,
-    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: false },
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: false, disableBlinkFeatures: 'Auxclick' },
   });
   win.setMenuBarVisibility(false);
   // Links open in the browser. The window itself never leaves its page.

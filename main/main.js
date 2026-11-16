@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, session } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { checkDocker } = require('./docker/check');
@@ -959,6 +959,7 @@ function createWindow() {
       nodeIntegration: false,
       webSecurity: true,
       allowRunningInsecureContent: false,
+      disableBlinkFeatures: 'Auxclick',
     },
   });
 
@@ -1000,6 +1001,9 @@ if (!gotSingleInstanceLock) {
 
 app.whenReady().then(() => {
   if (!gotSingleInstanceLock) return;
+  // Deny every web permission request (camera, notifications, openExternal, ...): the app needs none.
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+  session.defaultSession.setPermissionCheckHandler(() => false);
   projects.init(dataDir());
   settings.init(dataDir());
   for (const warning of registry.load(path.join(dataDir(), 'versions.json')).warnings) console.warn(warning);
