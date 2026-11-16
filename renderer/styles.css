@@ -4144,3 +4144,51 @@ button.stack-card.on {
 #edit-slow-tip:empty {
   display: none;
 }
+
+/* Linux title bar (shown only where the window has no native one) */
+.winbar {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 34px;
+  align-items: center;
+  background: #0f1226;
+  color: #fff;
+  -webkit-app-region: drag;
+  z-index: 9999;
+}
+.winbar-title {
+  padding: 0 10px 0 14px;
+  font-size: 13px;
+  opacity: 0.8;
+}
+.winbar button {
+  -webkit-app-region: no-drag;
+  width: 46px;
+  height: 34px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+.winbar button:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+.winbar .winbar-close:hover {
+  background: #e5484d;
+}
+.winbar-space {
+  flex: 1;
+}
+.winbar .winbar-menu {
+  display: flex;
+  height: 100%;
+}
+.winbar .winbar-menu button {
+  width: auto;
+  padding: 0 10px;
+  font-size: 13px;
+}

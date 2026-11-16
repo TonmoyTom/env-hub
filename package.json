@@ -1,6 +1,7 @@
 {
   "name": "projectdockhub",
   "productName": "ProjectDockHub",
+  "desktopName": "projectdockhub.desktop",
   "version": "0.0.2",
   "description": "A free, open source Docker-based local development environment with a GUI for Laravel and modern JavaScript and Python stacks.",
   "main": "main/main.js",
@@ -91,14 +92,21 @@
     },
     "linux": {
       "category": "Development",
-      "icon": "build/icon.png",
+      "icon": "build/icons",
       "maintainer": "ProjectDockHub contributors <noreply@projectdockhub.dev>",
       "target": [
         "AppImage",
         "deb"
-      ]
+      ],
+      "desktop": {
+        "StartupWMClass": "projectdockhub"
+      }
     },
-    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "deb": {
+      "afterInstall": "build/linux/after-install.sh",
+      "afterRemove": "build/linux/after-remove.sh"
+    }
   },
   "homepage": "https://projectdockhub.dev"
 }

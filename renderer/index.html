@@ -11,6 +11,21 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body data-view="projects">
+    <div class="winbar" id="winbar">
+      <span class="winbar-title">ProjectDockHub</span>
+      <nav class="winbar-menu" aria-label="Menu">
+        <button type="button" data-menu="File">File</button>
+        <button type="button" data-menu="Edit">Edit</button>
+        <button type="button" data-menu="View">View</button>
+        <button type="button" data-menu="Tools">Tools</button>
+        <button type="button" data-menu="Window">Window</button>
+        <button type="button" data-menu="Help">Help</button>
+      </nav>
+      <span class="winbar-space"></span>
+      <button type="button" data-win="minimize" aria-label="Minimize">&#8212;</button>
+      <button type="button" data-win="maximize" aria-label="Maximize">&#9633;</button>
+      <button type="button" data-win="close" aria-label="Close" class="winbar-close">&#10005;</button>
+    </div>
     <div class="app">
       <aside class="sidebar" aria-label="Main">
         <div class="brand">

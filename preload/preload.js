@@ -7,6 +7,8 @@ const INVOKE = {
   getAppInfo: 'app:getInfo',
   dockerCheck: 'docker:check',
   dockerStart: 'docker:start',
+  windowControl: 'window:control',
+  windowMenu: 'window:menu',
   dockerDownload: 'docker:download',
   listContainers: 'containers:list',
   listProjects: 'projects:list',
@@ -60,6 +62,8 @@ const EVENTS = {
 contextBridge.exposeInMainWorld('envhub', {
   getAppInfo: () => ipcRenderer.invoke(INVOKE.getAppInfo),
   checkDocker: () => ipcRenderer.invoke(INVOKE.dockerCheck),
+  windowMenu: (label, x, y) => ipcRenderer.invoke(INVOKE.windowMenu, label, x, y),
+  windowControl: (action) => ipcRenderer.invoke(INVOKE.windowControl, action),
   startDocker: () => ipcRenderer.invoke(INVOKE.dockerStart),
   downloadDocker: () => ipcRenderer.invoke(INVOKE.dockerDownload),
   listContainers: (projectName) => ipcRenderer.invoke(INVOKE.listContainers, projectName ?? null),
