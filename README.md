@@ -80,6 +80,16 @@ More details are in [`PLANNING.md`](PLANNING.md) and [`HANDOVER.md`](HANDOVER.md
 
 ProjectDockHub runs locally. It has no accounts and no telemetry. It talks to Docker on your machine and to Docker Hub (to search images and list versions). Database passwords are stored on your computer only, in the app data folder.
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+- Windows releases are built from this repository by the GitHub Actions workflow in [`.github/workflows/build.yml`](.github/workflows/build.yml). Only binaries built from this source are signed.
+- Every release needs a manual approval before it is signed.
+- **Authors, reviewers and approvers:** the project maintainers, [TonmoyTom](https://github.com/TonmoyTom). Changes from other contributors are reviewed by a maintainer before they are merged.
+- All team members use multi-factor authentication for GitHub and SignPath.
+- **Privacy:** see [Privacy](#privacy) above. The signed app has no accounts and no telemetry. It only talks to Docker on your machine and to Docker Hub.
+
 ## Contributing
 
 Issues and pull requests are welcome. Please run `npm test` before you send a change. See [`SECURITY.md`](SECURITY.md) to report a security problem.
