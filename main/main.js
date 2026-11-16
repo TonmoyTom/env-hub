@@ -4,6 +4,7 @@ const { app, BrowserWindow, ipcMain, shell, dialog, session } = require('electro
 const fs = require('fs');
 const path = require('path');
 const { checkDocker } = require('./docker/check');
+const { startDockerDesktop, downloadUrl } = require('./docker/launch');
 const { shutDownDocker } = require('./docker/desktop');
 const { syncVendorVolume } = require('./project/vendor-volume');
 const { runningProjects } = require('./tray');
@@ -304,6 +305,12 @@ async function runInstall(installOpts, portableSpec) {
 function registerIpcHandlers() {
   handle('app:getInfo', () => ({ name: app.getName(), version: app.getVersion() }));
   handle('docker:check', () => checkDocker());
+  handle('docker:start', () => startDockerDesktop());
+  // Opens the official Docker download in the browser (the file goes to the Downloads folder).
+  handle('docker:download', async () => {
+    await shell.openExternal(downloadUrl());
+    return { ok: true };
+  });
   handle('containers:list', (projectName) => listContainers(projectName));
   // Used by the New project form, so a name that is taken is caught on the first step.
   handle('project:checkName', (name) => {

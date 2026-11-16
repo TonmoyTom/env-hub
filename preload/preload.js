@@ -6,6 +6,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 const INVOKE = {
   getAppInfo: 'app:getInfo',
   dockerCheck: 'docker:check',
+  dockerStart: 'docker:start',
+  dockerDownload: 'docker:download',
   listContainers: 'containers:list',
   listProjects: 'projects:list',
   createProject: 'project:create',
@@ -58,6 +60,8 @@ const EVENTS = {
 contextBridge.exposeInMainWorld('envhub', {
   getAppInfo: () => ipcRenderer.invoke(INVOKE.getAppInfo),
   checkDocker: () => ipcRenderer.invoke(INVOKE.dockerCheck),
+  startDocker: () => ipcRenderer.invoke(INVOKE.dockerStart),
+  downloadDocker: () => ipcRenderer.invoke(INVOKE.dockerDownload),
   listContainers: (projectName) => ipcRenderer.invoke(INVOKE.listContainers, projectName ?? null),
   listProjects: () => ipcRenderer.invoke(INVOKE.listProjects),
   createProject: (input) => ipcRenderer.invoke(INVOKE.createProject, input),

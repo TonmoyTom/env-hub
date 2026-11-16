@@ -31,6 +31,10 @@ function isDesktopPlatform(platform) {
 
 function renderStatus(status) {
   clearGuidance();
+  // "Download Docker" is for a computer without Docker.
+  el.dockerDownload.hidden = status.reason !== 'not-found';
+  // "Start Docker" is only for Docker Desktop that is installed but closed.
+  el.dockerStart.hidden = !(status.reason === 'daemon-not-running' && (status.platform === 'win32' || status.platform === 'darwin'));
 
   if (status.reason === 'not-found') {
     el.title.textContent = 'Docker is not installed';
@@ -123,6 +127,47 @@ async function quietCheckDocker() {
     // The next check tries again.
   } finally {
     dockerCheckBusy = false;
+  }
+}
+
+// Opens Docker Desktop, then looks every few seconds until the engine answers (it needs a minute or two).
+const DOCKER_START_WAIT_MS = 3 * 60 * 1000;
+let dockerStarting = false;
+
+async function startDocker() {
+  if (dockerStarting) return;
+  dockerStarting = true;
+  el.dockerStart.disabled = true;
+  el.dockerStart.textContent = 'Starting...';
+  el.title.textContent = 'Starting Docker...';
+  el.detail.textContent = 'Docker Desktop is opening. This can take a minute or two.';
+  clearGuidance();
+  try {
+    const res = await window.envhub.startDocker();
+    if (!res.ok) {
+      await checkDocker();
+      showGuidance([res.error || 'Could not open Docker Desktop. Open it from the Start menu.']);
+      return;
+    }
+    const until = Date.now() + DOCKER_START_WAIT_MS;
+    while (Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      const status = await window.envhub.checkDocker();
+      if (status.running) {
+        await checkDocker();
+        loadProjects();
+        scheduleRefreshContainers();
+        return;
+      }
+    }
+    await checkDocker();
+    showGuidance(['Docker Desktop is taking long. Wait until it says it is running, then click Check again.']);
+  } catch (err) {
+    await checkDocker();
+  } finally {
+    dockerStarting = false;
+    el.dockerStart.disabled = false;
+    el.dockerStart.textContent = 'Start Docker';
   }
 }
 
@@ -3620,6 +3665,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   el.detail = byId('docker-detail');
   el.guidance = byId('docker-guidance');
   el.button = byId('check-again');
+  el.dockerStart = byId('docker-start');
+  el.dockerDownload = byId('docker-download');
 
   el.stageItems = [...document.querySelectorAll('#stages li')];
   el.stageName = byId('stage-name');
@@ -3730,6 +3777,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   editView = createProgressView(el.editProgress);
 
   el.button.addEventListener('click', checkDocker);
+  el.dockerStart.addEventListener('click', startDocker);
+  el.dockerDownload.addEventListener('click', async () => {
+    try {
+      await window.envhub.downloadDocker();
+      showGuidance([
+        'The download page is open in your browser. Install Docker Desktop, open it and wait until it says it is running.',
+        'On Windows, if it asks to turn on WSL 2, accept it and restart the computer when asked.',
+        'Then come back here and click Check again.',
+      ]);
+    } catch (err) {
+      showGuidance(['Could not open the browser. Download Docker Desktop from https://www.docker.com/products/docker-desktop/']);
+    }
+  });
   el.stageName.addEventListener('submit', submitName);
   for (const radio of document.querySelectorAll('input[name="project-source"]')) radio.addEventListener('change', syncSourceForm);
   byId('pick-folder').addEventListener('click', pickFolder);

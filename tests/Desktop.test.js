@@ -45,3 +45,26 @@ test('settings: stopping Docker on exit is on by default and the choice is saved
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('start Docker: Windows uses the installed Docker Desktop.exe, Mac uses open, Linux has no button', () => {
+  const { launchCommand, startDockerDesktop } = require('../main/docker/launch');
+  const env = { ProgramFiles: 'C:\Program Files' };
+  const exe = path.join('C:\Program Files', 'Docker', 'Docker', 'Docker Desktop.exe');
+  assert.deepStrictEqual(launchCommand('win32', (f) => f === exe, env), { command: exe, args: [] });
+  assert.strictEqual(launchCommand('win32', () => false, env), null);
+  assert.deepStrictEqual(launchCommand('darwin'), { command: 'open', args: ['-a', 'Docker'] });
+  assert.strictEqual(launchCommand('linux'), null);
+  return startDockerDesktop(undefined, null).then((res) => {
+    assert.strictEqual(res.ok, false);
+    assert.match(res.error, /not found/);
+  });
+});
+
+test('download Docker: the official installer for this computer, the install guide on Linux', () => {
+  const { downloadUrl } = require('../main/docker/launch');
+  assert.match(downloadUrl('win32', 'x64'), /^https:\/\/desktop\.docker\.com\/win\/main\/amd64\//);
+  assert.match(downloadUrl('win32', 'arm64'), /\/win\/main\/arm64\//);
+  assert.match(downloadUrl('darwin', 'arm64'), /\/mac\/main\/arm64\/Docker\.dmg$/);
+  assert.match(downloadUrl('darwin', 'x64'), /\/mac\/main\/amd64\/Docker\.dmg$/);
+  assert.strictEqual(downloadUrl('linux', 'x64'), 'https://docs.docker.com/engine/install/');
+});
