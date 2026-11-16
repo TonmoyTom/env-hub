@@ -2,7 +2,7 @@
   "name": "projectdockhub",
   "productName": "ProjectDockHub",
   "desktopName": "projectdockhub.desktop",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "A free, open source Docker-based local development environment with a GUI for Laravel and modern JavaScript and Python stacks.",
   "main": "main/main.js",
   "scripts": {
