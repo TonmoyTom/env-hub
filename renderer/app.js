@@ -422,7 +422,7 @@ function showNote(name, text, kind = noteKind(text)) {
     notes.delete(name);
   } else {
     notes.set(name, { text, kind });
-    if (kind !== 'error' && kind !== 'busy') noteTimers.set(name, setTimeout(() => clearNote(name), NOTE_MS));
+    if (kind !== 'error' && kind !== 'busy' && kind !== 'warn') noteTimers.set(name, setTimeout(() => clearNote(name), NOTE_MS));
   }
   paintNotes(name);
 }
@@ -695,6 +695,7 @@ const ICONS = {
   external: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"></path><path d="M20 4 10 14"></path><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"></path></svg>',
   copy: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V6a2 2 0 0 1 2-2h9"></path></svg>',
   check: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"></path></svg>',
+  terminal: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="m7 9 3 3-3 3"></path><path d="M13 15h4"></path></svg>',
   eye: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>',
   eyeOff: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"></path><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"></path><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path></svg>',
 };
@@ -750,7 +751,8 @@ async function copyWithFeedback(text, button) {
 }
 
 // A label, a value in a box and a copy button. Used for commands and addresses.
-function codeRow(label, text) {
+// `terminal` (optional) adds a button after Copy that opens a terminal in this place: { onClick, title, disabled }.
+function codeRow(label, text, { terminal } = {}) {
   const row = makeElement('div', 'code-row');
   const key = makeElement('span', 'code-label');
   key.textContent = label;
@@ -758,6 +760,11 @@ function codeRow(label, text) {
   const code = makeElement('code', '');
   code.textContent = text;
   box.append(code, iconButton('copy', `Copy ${label.toLowerCase()}`, (event) => copyWithFeedback(text, event.currentTarget)));
+  if (terminal) {
+    const button = iconButton('terminal', terminal.title, terminal.onClick);
+    button.disabled = terminal.disabled === true;
+    box.appendChild(button);
+  }
   row.append(key, box);
   return row;
 }
@@ -823,8 +830,8 @@ function credCardHead(markText, title, sub) {
 }
 
 const ENV_TARGETS = [
-  ['docker', 'App runs in Docker', 'The host is the service name (for example DB_HOST=mysql). Use these in the project .env. Do not use them in a database tool.'],
-  ['host', 'App runs on this computer', 'The host is localhost and the port is the one Docker published. For an app you start outside Docker.'],
+  ['docker', 'Inside Docker (recommended)', 'Choose this if your app is a service in this project, such as php, node or app. The host is the service name (for example DB_HOST=mysql). Do not use these values in a database tool.'],
+  ['host', 'Outside Docker (on my computer)', 'Choose this only if you start the app yourself with Laragon, XAMPP, php artisan serve or npm run dev. The host is localhost. If your app runs in Docker and shows "No such file or directory" or "Connection refused", you picked the wrong one: switch to "Inside Docker".'],
 ];
 
 function renderCredentials(name, data) {
@@ -839,7 +846,7 @@ function renderCredentials(name, data) {
     let target = 'docker';
     const seg = makeElement('div', 'seg');
     seg.setAttribute('role', 'group');
-    seg.setAttribute('aria-label', 'Where the app runs');
+    seg.setAttribute('aria-label', 'Where your app runs');
     const explain = makeElement('p', 'muted small cred-explain');
     const code = makeElement('pre', 'code-block');
     const choices = ENV_TARGETS.map(([value, label]) => {
@@ -847,8 +854,12 @@ function renderCredentials(name, data) {
       button.dataset.value = value;
       return button;
     });
+    const warning = makeElement('p', 'cred-warning small');
+    warning.setAttribute('role', 'alert');
+    warning.textContent = 'Your app is a service of this project, so it runs inside Docker. These localhost values will fail there with "No such file or directory" or "Connection refused". Use "Inside Docker (recommended)" instead.';
     function pick(value) {
       target = value;
+      warning.hidden = !(value === 'host' && data.appInDocker);
       for (const button of choices) button.setAttribute('aria-pressed', button.dataset.value === value ? 'true' : 'false');
       explain.textContent = ENV_TARGETS.find((t) => t[0] === value)[2];
       code.textContent = data.env[value].trim() || '# Nothing to add for this project.';
@@ -866,7 +877,7 @@ function renderCredentials(name, data) {
     });
     const top = makeElement('div', 'cred-env-top');
     top.append(seg, actions);
-    section.append(top, explain, code);
+    section.append(top, explain, warning, code);
     pick('docker');
     body.appendChild(section);
   }
@@ -948,7 +959,102 @@ function renderCredentials(name, data) {
     foot.textContent = 'A port can change when the project starts, if it is taken. Start the project to see the final ones.';
     body.appendChild(foot);
   }
+  if (data.platform === 'win32' && data.folder) body.appendChild(slowOnWindowsTip(data.folder));
   body.appendChild(status);
+}
+
+// A tip for slow projects on Windows: Defender scans every file Docker reads from the project folder.
+// Gives one command to copy, and the same steps for people who do not want to use a command.
+// `top` is the version on the project Overview: a coloured card, with a button to hide it for good.
+const SLOW_TIP_KEY = 'envhub.hideSlowTip';
+
+function slowTipHidden() {
+  try {
+    return localStorage.getItem(SLOW_TIP_KEY) === '1';
+  } catch (err) {
+    return false;
+  }
+}
+
+function isWindowsBrowser() {
+  return /Windows/i.test(navigator.userAgent || '');
+}
+
+function slowOnWindowsTip(folder, { top = false, project = null } = {}) {
+  const quoted = folder.replace(/'/g, "''");
+  const command = [
+    `Add-MpPreference -ExclusionPath '${quoted}'`,
+    'Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\\Docker"',
+  ].join('\n');
+
+  const details = makeElement('details', top ? 'cred-tip cred-tip-top' : 'cred-section cred-tip');
+  const summary = makeElement('summary', '');
+  summary.textContent = top ? 'Project slow on Windows? Click here for the fix' : 'Project slow on Windows?';
+  details.appendChild(summary);
+
+  // Laravel: the biggest gain is vendor/ in a Docker volume, so that comes first.
+  if (project && project.stack === 'laravel' && project.editable) {
+    const fast = makeElement('h4', '');
+    fast.textContent = 'Fastest fix: keep vendor in a Docker volume';
+    const fastText = makeElement('p', 'muted small');
+    fastText.textContent = 'Docker reads files from the Windows disk slowly, and Laravel loads thousands of files from vendor on every page. Open the Settings tab, turn on "Keep vendor in a Docker volume" and click Save and apply. The first start copies vendor once.';
+    const fastRow = makeElement('div', 'row-actions');
+    const fastButton = addButton(fastRow, 'Open Settings', () => openDetailTab(project.name, 'settings'));
+    fastButton.classList.add('primary-soft');
+    const also = makeElement('h4', '');
+    also.textContent = 'Also: exclude the folder from Windows Defender';
+    details.append(fast, fastText, fastRow, also);
+  }
+
+  const intro = makeElement('p', 'muted small');
+  intro.textContent = 'Docker reads your project files from the Windows disk, and Windows Defender scans every one of them. A Laravel project has thousands of files, so pages and artisan commands can take many seconds. Exclude the project folder from the Defender scan:';
+  details.appendChild(intro);
+
+  const withCommand = makeElement('h4', '');
+  withCommand.textContent = 'With a command';
+  const how = makeElement('p', 'muted small');
+  how.textContent = 'Open PowerShell as Administrator (right-click PowerShell, then Run as administrator), paste this and press Enter:';
+  const code = makeElement('pre', 'code-block');
+  code.textContent = command;
+  const copyRow = makeElement('div', 'row-actions');
+  const copyButton = addButton(copyRow, 'Copy command', () => copyWithFeedback(command, copyButton));
+  details.append(withCommand, how, code, copyRow);
+
+  const withoutCommand = makeElement('h4', '');
+  withoutCommand.textContent = 'Without a command';
+  const steps = makeElement('ol', 'small');
+  for (const text of [
+    'Open Windows Security, then Virus & threat protection.',
+    'Under "Virus & threat protection settings" click Manage settings.',
+    'Scroll to Exclusions and click Add or remove exclusions.',
+    `Click Add an exclusion, choose Folder, and select ${folder}`,
+    'Add a second folder: %LOCALAPPDATA%\\Docker',
+  ]) {
+    const item = makeElement('li', '');
+    item.textContent = text;
+    steps.appendChild(item);
+  }
+  details.append(withoutCommand, steps);
+
+  const wsl = makeElement('h4', '');
+  wsl.textContent = 'Still slow? Keep the project inside WSL';
+  const wslText = makeElement('p', 'muted small');
+  wslText.textContent = 'Files stored inside a WSL Linux distro (for example Ubuntu, under /home/you/project) are read much faster than files on C:. Move the project there and select that folder in ProjectDockHub. Also close heavy apps: if Windows runs out of RAM it swaps to disk and everything gets slower.';
+  details.append(wsl, wslText);
+
+  if (top) {
+    const hideRow = makeElement('div', 'row-actions');
+    addButton(hideRow, 'Do not show this again', () => {
+      try {
+        localStorage.setItem(SLOW_TIP_KEY, '1');
+      } catch (err) {
+        // The tip just comes back next time.
+      }
+      details.remove();
+    });
+    details.appendChild(hideRow);
+  }
+  return details;
 }
 
 // Database, Redis and mail logins, plus the .env lines, as cards with copy buttons.
@@ -1744,6 +1850,66 @@ function showLanAddress(address) {
   byId('detail-lan-url').textContent = address;
 }
 
+// Who can open the project, in three levels, plus a button that finds out why another computer cannot.
+function networkCard(project, links) {
+  const card = ovCard('Who can open this?');
+  const main = project.ports[0];
+  const local = main ? `http://localhost:${main.host}` : '';
+  const shared = Boolean(links && links.lanShare);
+  const lan = lanAddressOf(project, links);
+
+  card.card.appendChild(kvRow('This computer only', local || '-'));
+  card.card.appendChild(kvRow('Same Wi-Fi / router', shared ? lan || 'No network address found' : 'Off (turn on in Settings)'));
+  card.card.appendChild(kvRow('Whole internet', 'Not available'));
+  const note = makeElement('p', 'pcard-note');
+  note.textContent = '192.168.x.x addresses only work for devices on the same Wi-Fi or router. They cannot be opened from the internet or on mobile data.';
+  card.card.appendChild(note);
+
+  const result = makeElement('div', 'diag-result');
+  const run = async () => {
+    result.textContent = 'Checking...';
+    try {
+      renderDiagnosis(result, project, await window.envhub.testAccess(project.name), run);
+    } catch (err) {
+      result.textContent = `Could not check: ${ipcMessage(err)}`;
+    }
+  };
+  const actions = makeElement('div', 'row-actions');
+  addButton(actions, 'Test access', run);
+  card.card.append(actions, result);
+  return card.card;
+}
+
+function renderDiagnosis(box, project, diagnosis, recheck) {
+  box.textContent = '';
+  const summary = makeElement('p', diagnosis.ok ? 'diag-summary diag-ok' : 'diag-summary diag-bad');
+  summary.textContent = diagnosis.summary;
+  box.appendChild(summary);
+  const fixes = {
+    start: ['Start project', () => runProjectAction('Start', 'startProject', project.name)],
+    restart: ['Restart project', () => runProjectAction('Restart', 'restartProject', project.name)],
+    settings: ['Open Settings', () => setDetailTab('settings')],
+    firewall: ['Allow in Firewall', async () => {
+      const res = await window.envhub.allowFirewall(project.name);
+      if (res && res.ok === false) setActionStatus(res.error || 'Could not add the firewall rule.', project.name, 'error');
+      await recheck();
+    }],
+  };
+  for (const step of diagnosis.steps) {
+    const row = makeElement('div', step.ok ? 'diag-step diag-ok' : 'diag-step diag-bad');
+    const title = makeElement('strong', '');
+    title.textContent = `${step.ok ? '✓' : '✗'} ${step.title}`;
+    row.appendChild(title);
+    if (step.detail) {
+      const detail = makeElement('p', 'muted small');
+      detail.textContent = step.detail;
+      row.appendChild(detail);
+    }
+    if (step.fix && fixes[step.fix]) addButton(row, fixes[step.fix][0], fixes[step.fix][1]);
+    box.appendChild(row);
+  }
+}
+
 function renderOverview(project) {
   const box = byId('detail-overview');
   const fresh = overviewState.name === project.name;
@@ -1827,6 +1993,7 @@ function renderOverview(project) {
   logs.card.appendChild(more);
   main.appendChild(logs.card);
 
+
   // Database
   const db = services.find((item) => ['mysql', 'postgres', 'mongodb'].includes(item.name));
   const dbCard = ovCard('Database');
@@ -1870,6 +2037,8 @@ function renderOverview(project) {
   }
   info.card.appendChild(actions);
   side.appendChild(info.card);
+
+  side.appendChild(networkCard(project, links));
 
   // Delete, kept out of the way
   const danger = makeElement('div', 'ov-danger');
@@ -2749,6 +2918,17 @@ function showProjectsDir(info) {
   el.resetProjectsDir.hidden = info.isDefault;
   setText('settings-projects-dir', info.projectsDir);
   byId('settings-reset-dir').hidden = info.isDefault;
+  byId('settings-stop-docker').checked = info.stopDockerOnExit !== false;
+}
+
+async function changeStopDockerOnExit(event) {
+  const box = event.target;
+  try {
+    await window.envhub.setStopDockerOnExit(box.checked);
+  } catch (err) {
+    box.checked = !box.checked;
+    say(`Could not save the setting: ${ipcMessage(err)}`);
+  }
 }
 
 async function loadProjectsDir() {
@@ -3059,6 +3239,7 @@ function ipcMessage(err) {
 function setEditBusy(busy) {
   el.editSave.disabled = busy;
   el.editApply.disabled = busy;
+  el.editRebuild.disabled = busy;
   el.editAddService.disabled = busy;
 }
 
@@ -3097,7 +3278,31 @@ function renderEdit(details) {
   el.editPython.hidden = !details.packagesLabel;
   el.editKeepPackagesText.textContent = details.packagesLabel || '';
   el.editKeepPackages.checked = details.keepPackages === true;
+  // Slow on Windows: the fix is part of the Settings tab, under the vendor switch.
+  el.editSlowTip.textContent = '';
+  if (isWindowsBrowser() && details.folder) el.editSlowTip.appendChild(slowOnWindowsTip(details.folder));
+  el.editVendorRow.hidden = !(details.php && details.php.vendorVolumeAvailable);
+  el.editVendorVolume.checked = Boolean(details.php && details.php.vendorVolume);
   syncEditDbField();
+
+  el.editPhp.hidden = !details.php;
+  el.editRebuild.hidden = !details.php;
+  el.editPhpNote.hidden = !(details.php && details.php.rebuildNeeded);
+  el.editPhpExt.textContent = '';
+  if (details.php) {
+    for (const ext of details.php.available) {
+      const label = makeElement('label', 'opt-tile');
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.dataset.ext = ext.key;
+      box.checked = details.php.extensions.includes(ext.key);
+      const title = makeElement('span', 'opt-name');
+      title.textContent = ext.label;
+      label.append(box, title);
+      el.editPhpExt.appendChild(label);
+    }
+    el.editPhpIni.value = details.php.ini;
+  }
 
   el.editExtras.textContent = '';
   for (const extra of details.extras) addServiceRow(extra, '', el.editExtras);
@@ -3157,15 +3362,29 @@ function savedText(res, applyNow) {
   return parts.join(' ');
 }
 
-async function applyEdit(name) {
+// After a successful apply, the progress panel closes by itself. A failed one stays open, so its log can be read.
+const PROGRESS_CLOSE_MS = 4000;
+let progressCloseTimer = null;
+
+async function applyEdit(name, rebuild = false) {
+  clearTimeout(progressCloseTimer);
   el.editProgress.hidden = false;
-  editView.begin(`Applying changes to ${name}`);
-  const res = await runStart(name, editView, { apply: true });
-  setActionStatus(describeResult('Apply', name, res), name);
+  editView.begin(rebuild ? `Rebuilding the PHP container of ${name}` : `Applying changes to ${name}`);
+  const res = await runStart(name, editView, { apply: true, rebuild });
+  const result = describeResult(rebuild ? 'Rebuild' : 'Apply', name, res);
+  setActionStatus(result, name);
+  if (res.ok !== false) {
+    // The notice about a pending rebuild goes away once the build worked.
+    if (editState.name === name) {
+      el.editPhpNote.hidden = true;
+      el.editMessage.textContent = result;
+    }
+    progressCloseTimer = setTimeout(() => { el.editProgress.hidden = true; }, PROGRESS_CLOSE_MS);
+  }
   await refreshAfterEdit();
 }
 
-async function saveEdit(applyNow) {
+async function saveEdit(applyNow, rebuild = false) {
   const name = editState.name;
   if (!name) return;
 
@@ -3202,6 +3421,9 @@ async function saveEdit(applyNow) {
         redisPassword: el.editRedisPass.value.trim(),
         lanShare: el.editLan.checked,
         keepPackages: el.editPython.hidden ? undefined : el.editKeepPackages.checked,
+        phpExtensions: el.editPhp.hidden ? undefined : [...el.editPhpExt.querySelectorAll('input[data-ext]')].filter((box) => box.checked).map((box) => box.dataset.ext),
+        phpIni: el.editPhp.hidden ? undefined : el.editPhpIni.value,
+        vendorVolume: el.editVendorRow.hidden ? undefined : el.editVendorVolume.checked,
         versions: Object.fromEntries([...el.editOptions.querySelectorAll('select[data-version-key]')].map((s) => [s.dataset.versionKey, s.value])),
       });
     } catch (err) {
@@ -3212,8 +3434,12 @@ async function saveEdit(applyNow) {
 
     renderEdit(res.details);
     el.editMessage.textContent = savedText(res, applyNow);
+    // Tell the user that the image still has to be rebuilt. The message stays until it is closed.
+    if (!applyNow && res.details.php && res.details.php.rebuildNeeded) {
+      setActionStatus('PHP extensions changed. Click "Save and apply" or "Rebuild PHP container" to install them.', name, 'warn');
+    }
     await refreshAfterEdit();
-    if (applyNow) await applyEdit(name);
+    if (applyNow) await applyEdit(name, rebuild);
   } finally {
     setEditBusy(false);
   }
@@ -3237,6 +3463,16 @@ async function copyText(text) {
     el.linksMessage.textContent = 'Copied.';
   } catch (err) {
     el.linksMessage.textContent = 'Could not copy. Select the text and copy it yourself.';
+  }
+}
+
+// Opens a terminal window in the service, in the folder that holds the project files.
+async function openLinksTerminal(name, svc) {
+  try {
+    await window.envhub.projectShell(name, svc.name);
+    el.linksMessage.textContent = `Opened a terminal for ${svc.name}${svc.workdir ? ` in ${svc.workdir}` : ''}.`;
+  } catch (err) {
+    el.linksMessage.textContent = `Could not open a terminal: ${ipcMessage(err)}`;
   }
 }
 
@@ -3279,7 +3515,13 @@ function renderLinks(data) {
     head.append(mark, info, actions);
     card.appendChild(head);
     if (svc.command) card.appendChild(codeRow('Runs', svc.command));
-    card.appendChild(codeRow('Shell', svc.shell));
+    card.appendChild(codeRow('Shell', svc.shell, {
+      terminal: {
+        title: data.running ? `Open a terminal in ${svc.name}${svc.workdir ? ` (${svc.workdir})` : ''}` : 'Start the project to open a terminal',
+        disabled: !data.running,
+        onClick: () => openLinksTerminal(data.name, svc),
+      },
+    }));
     for (const port of svc.ports) {
       for (const url of port.lanUrls || []) card.appendChild(codeRow('Other computers', url));
     }
@@ -3399,6 +3641,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   el.keepPackagesText = byId('keep-packages-text');
   el.editKeepPackagesText = byId('edit-keep-packages-text');
   el.editPython = byId('edit-python');
+  el.editVendorRow = byId('edit-vendor-row');
+  el.editSlowTip = byId('edit-slow-tip');
+  el.editVendorVolume = byId('edit-vendor-volume');
   el.editKeepPackages = byId('edit-keep-packages');
   el.existingFields = byId('existing-fields');
   el.existingFolder = byId('existing-folder');
@@ -3443,6 +3688,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   el.editRedis = byId('edit-redis');
   el.editRedisPass = byId('edit-redis-pass');
   el.editLan = byId('edit-lan');
+  el.editPhp = byId('edit-php');
+  el.editPhpExt = byId('edit-php-ext');
+  el.editPhpNote = byId('edit-php-note');
+  el.editRebuild = byId('edit-rebuild');
+  el.editPhpIni = byId('edit-php-ini');
   el.versionsWarning = byId('versions-warning');
   el.versionsFileBtn = byId('versions-file-btn');
   el.newDbName = byId('new-db-name');
@@ -3485,6 +3735,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   byId('pick-folder').addEventListener('click', pickFolder);
   byId('change-projects-dir').addEventListener('click', () => changeProjectsDir(false));
   el.resetProjectsDir.addEventListener('click', () => changeProjectsDir(true));
+  byId('settings-stop-docker').addEventListener('change', changeStopDockerOnExit);
   loadProjectsDir();
   el.stageSetup.addEventListener('submit', submitSetup);
   byId('setup-back').addEventListener('click', () => showStage('name'));
@@ -3520,6 +3771,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   el.editAddService.addEventListener('click', () => addServiceRow({}, '', el.editExtras));
   el.editSave.addEventListener('click', () => saveEdit(false));
   el.editApply.addEventListener('click', () => saveEdit(true));
+  el.editRebuild.addEventListener('click', () => saveEdit(true, true));
   byId('close-start').addEventListener('click', () => { el.startCard.hidden = true; });
   byId('close-logs').addEventListener('click', () => { el.logsCard.hidden = true; });
   byId('cred-close').addEventListener('click', () => { el.credCard.hidden = true; });
@@ -3548,6 +3800,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         radio.checked = true;
         syncSourceForm();
       }
+    } else if (typeof action === 'string' && action.startsWith('open-project:')) {
+      ensureProjectsView();
+      openDetail(action.slice('open-project:'.length));
     } else if (action === 'refresh') {
       loadProjects();
       scheduleRefreshContainers();

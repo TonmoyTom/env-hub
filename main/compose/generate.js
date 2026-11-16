@@ -203,6 +203,7 @@ function generateCompose(project) {
       type: 'bind',
       source: v.source,
       target: v.target,
+      ...(v.readOnly === true ? { read_only: true } : {}),
     }));
 
     // Named volumes keep database data when the container is recreated. They are labeled so

@@ -837,6 +837,24 @@
               </div>
             </div>
             <div class="card">
+              <h2>Docker</h2>
+              <p class="muted small">
+                Stop on a project stops all containers of that project.
+              </p>
+              <label class="switch-row" for="settings-stop-docker">
+                <span class="switch-text">
+                  <strong>Stop Docker when I exit ProjectDockHub</strong>
+                  <span class="muted small"
+                    >Exit (in the File menu or the icon next to the clock)
+                    stops every container and closes Docker Desktop, so it
+                    no longer uses memory. Closing the window does not
+                    exit. Containers of other tools stop too.</span
+                  >
+                </span>
+                <input id="settings-stop-docker" type="checkbox" class="switch" checked />
+              </label>
+            </div>
+            <div class="card">
               <h2>Versions</h2>
               <p class="muted small">
                 Add PHP, Node, MySQL and other versions without changing any
@@ -961,11 +979,65 @@
                     >Other computers on the same network can open the project
                     page. Databases and admin tools stay on this computer. Use
                     it only on a network you trust. Windows may ask to allow
-                    Docker through the firewall: choose Private networks.</span
+                    Docker through the firewall. If the page still does not open, see the steps below.</span
                   >
                 </span>
                 <input id="edit-lan" type="checkbox" class="switch" />
               </label>
+              <details class="cred-tip" id="lan-manual">
+                <summary>Not opening from another device? Do it by hand</summary>
+                <p class="muted small">
+                  What the switch does: it publishes the project's web port on
+                  all network adapters (0.0.0.0) instead of only this computer
+                  (127.0.0.1). Check each step below.
+                </p>
+                <ol class="small">
+                  <li>
+                    <strong>Save and restart.</strong> Turn the switch on, press
+                    Save, then Restart the project. Without a restart the
+                    old setting stays.
+                  </li>
+                  <li>
+                    <strong>Check the port.</strong> In a terminal run
+                    <code>docker ps --format "{{.Names}}  {{.Ports}}"</code>.
+                    The web container must show <code>0.0.0.0:PORT-&gt;80/tcp</code>.
+                    If it shows <code>127.0.0.1:PORT</code>, it is still local only:
+                    restart again.
+                  </li>
+                  <li>
+                    <strong>Find this computer's address.</strong> Run
+                    <code>ipconfig</code> and use the IPv4 address of your Wi-Fi
+                    or Ethernet adapter, for example 192.168.1.105. Ignore
+                    addresses of vEthernet, WSL or Docker adapters.
+                  </li>
+                  <li>
+                    <strong>Allow the port in Windows Firewall.</strong> Open
+                    PowerShell as Administrator and run:
+                    <code>New-NetFirewallRule -DisplayName "EnvHub PORT" -Direction Inbound -Protocol TCP -LocalPort PORT -Action Allow -Profile Any -RemoteAddress LocalSubnet</code>
+                    (replace PORT). If your Wi-Fi is marked "Public" in Windows,
+                    a rule for Private networks only will not work, which is why
+                    <code>-Profile Any</code> is used.
+                  </li>
+                  <li>
+                    <strong>Use the same Wi-Fi.</strong> The other device must be on
+                    the same Wi-Fi or router. Mobile data, a guest network or a
+                    VPN will not reach it.
+                  </li>
+                  <li>
+                    <strong>Open it.</strong> Type
+                    <code>http://192.168.1.105:PORT</code> in the other device's
+                    browser, with your own address and port. The first page
+                    can take many seconds while the app warms up.
+                  </li>
+                </ol>
+                <p class="muted small">
+                  Addresses like 192.168.x.x never work from the internet. To
+                  show the site to someone outside your network, you need a
+                  tunnel (for example cloudflared or ngrok) or a server.
+                  Use the Test access button on the project's Overview tab to
+                  find which step fails.
+                </p>
+              </details>
               <label
                 id="edit-python"
                 class="switch-row"
@@ -988,6 +1060,38 @@
               </label>
             </div>
 
+            <div id="edit-php" class="form-section" hidden>
+              <div class="form-section-head">
+                <h3>PHP</h3>
+                <p class="muted small">
+                  Already included: pdo_mysql, mbstring, zip, bcmath, intl.
+                  Tick more extensions (for example GD for images). The PHP
+                  image is rebuilt when you click Save and apply, which can
+                  take a few minutes.
+                </p>
+              </div>
+              <p id="edit-php-note" class="cred-warning small" role="alert" hidden>
+                The PHP extensions changed, but the PHP image was not rebuilt
+                yet. Click Save and apply, or Rebuild PHP container, to install
+                them.
+              </p>
+              <fieldset id="edit-php-ext" class="options tiles"></fieldset>
+              <label for="edit-php-ini"><strong>php.ini settings</strong></label>
+              <textarea
+                id="edit-php-ini"
+                class="code-input"
+                rows="6"
+                spellcheck="false"
+                autocomplete="off"
+                placeholder="upload_max_filesize = 64M&#10;post_max_size = 64M&#10;memory_limit = 512M"
+              ></textarea>
+              <p class="muted small">
+                One setting per line, as name = value. These lines are added to
+                the PHP settings; they do not replace the whole php.ini. Saving
+                and applying restarts the PHP container.
+              </p>
+            </div>
+
             <div class="form-section">
               <div class="form-section-head">
                 <h3>Extra services</h3>
@@ -1007,12 +1111,43 @@
               </p>
             </div>
 
+            <div id="edit-vendor-row" class="form-section" hidden>
+              <div class="form-section-head">
+                <h3>Speed</h3>
+              </div>
+              <label class="switch-row" for="edit-vendor-volume">
+                <span class="switch-text">
+                  <strong>Keep vendor in a Docker volume (faster pages)</strong>
+                  <span class="muted small"
+                    >Docker reads the project folder slowly, and Laravel
+                    loads thousands of files from vendor on every page. In a
+                    volume they are read fast. Click Save and apply: the
+                    first start copies vendor once (a few minutes). After
+                    that, run composer in the project's Terminal; the vendor
+                    folder in your project folder is no longer updated (your
+                    editor still reads it).</span
+                  >
+                </span>
+                <input id="edit-vendor-volume" type="checkbox" class="switch" />
+              </label>
+            </div>
+
+            <div id="edit-slow-tip" class="form-section"></div>
+
             <p id="edit-error" class="error small" hidden></p>
             <p id="edit-message" class="muted small" aria-live="polite"></p>
             <div class="stage-actions form-actions">
               <button type="button" id="edit-save">Save</button>
               <button type="button" id="edit-apply" class="primary">
                 Save and apply
+              </button>
+              <button
+                type="button"
+                id="edit-rebuild"
+                hidden
+                title="Saves, then builds the PHP image again from nothing and restarts the project. Use it when an extension does not work or a build was stuck."
+              >
+                Rebuild PHP container
               </button>
             </div>
             <div id="edit-progress" hidden></div>

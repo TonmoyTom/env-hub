@@ -15,7 +15,15 @@ function commandText(command) {
   return Array.isArray(command) ? command.map((arg) => quoteArg(String(arg))).join(' ') : '';
 }
 
-function buildLinks({ name, config, ports, composeFile, running, lan = {} }) {
+// Where the project files are inside a service: the target of the mount that shares the project folder.
+// Empty when the service does not share it (a database, for example), then a shell starts in the image's own folder.
+function workdirOf(service, folder) {
+  if (!folder) return '';
+  const mount = (service.volumes || []).find((v) => v.source === folder);
+  return mount ? mount.target : '';
+}
+
+function buildLinks({ name, config, ports, composeFile, running, lan = {}, folder }) {
   const container = (service) => `envhub-${name}-${service}`;
   const compose = `docker compose -f "${composeFile}" -p envhub-${name}`;
 
@@ -24,7 +32,8 @@ function buildLinks({ name, config, ports, composeFile, running, lan = {} }) {
     image: svc.image,
     container: container(svc.name),
     command: commandText(svc.command),
-    shell: `docker exec -it ${container(svc.name)} sh`,
+    shell: `docker exec -it${workdirOf(svc, folder) ? ` -w ${workdirOf(svc, folder)}` : ''} ${container(svc.name)} sh`,
+    workdir: workdirOf(svc, folder),
     ports: ports
       .filter((p) => p.service === svc.name)
       .map((p) => ({
@@ -47,4 +56,4 @@ function buildLinks({ name, config, ports, composeFile, running, lan = {} }) {
   return { name, running: running === true, lanShare: Boolean(lan.enabled), lanFound: Boolean(lan.enabled) && lan.addresses.length > 0, services, commands };
 }
 
-module.exports = { buildLinks, commandText };
+module.exports = { buildLinks, commandText, workdirOf };

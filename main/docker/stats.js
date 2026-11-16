@@ -112,15 +112,22 @@ async function projectDisk(projectName) {
 
 // The argument list for a terminal window that runs a shell in one container.
 // Only the container name is put in, and it is built from names that were already checked.
-function shellArgs(container) {
-  return ['exec', '-it', container, 'sh'];
+// `workdir` is the folder inside the container the shell starts in (where the project files are).
+function shellArgs(container, workdir) {
+  return ['exec', '-it', ...(workdir ? ['-w', workdir] : []), container, 'sh'];
 }
 
+// A folder path inside a container. Only plain characters, so it is safe on a command line.
+const WORKDIR_RE = /^\/[A-Za-z0-9._/-]{0,200}$/;
+
 // Opens a terminal window with a shell in the container. Returns when the window was started.
-async function openShell(projectName, service, { platform = process.platform, spawnFn } = {}) {
+async function openShell(projectName, service, { platform = process.platform, spawnFn, workdir } = {}) {
   assertName(projectName);
   if (typeof service !== 'string' || !/^[a-z][a-z0-9-]{0,39}$/.test(service)) {
     throw new Error('Unknown service');
+  }
+  if (workdir !== undefined && workdir !== '' && !WORKDIR_RE.test(workdir)) {
+    throw new Error('Invalid folder');
   }
   const container = `envhub-${projectName}-${service}`;
   const running = await runDocker([
@@ -131,7 +138,7 @@ async function openShell(projectName, service, { platform = process.platform, sp
   }
 
   const launch = spawnFn || spawn;
-  const dockerLine = ['docker', ...shellArgs(container)].join(' ');
+  const dockerLine = ['docker', ...shellArgs(container, workdir)].join(' ');
 
   return new Promise((resolve, reject) => {
     let child;
@@ -144,7 +151,7 @@ async function openShell(projectName, service, { platform = process.platform, sp
       const script = `tell application "Terminal" to do script "${dockerLine}"`;
       child = launch('osascript', ['-e', script], { detached: true, stdio: 'ignore' });
     } else {
-      child = launch('x-terminal-emulator', ['-e', ...['docker', ...shellArgs(container)]], {
+      child = launch('x-terminal-emulator', ['-e', ...['docker', ...shellArgs(container, workdir)]], {
         detached: true, stdio: 'ignore',
       });
     }

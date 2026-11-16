@@ -4,6 +4,9 @@ const { app, BrowserWindow, ipcMain, shell, dialog, session } = require('electro
 const fs = require('fs');
 const path = require('path');
 const { checkDocker } = require('./docker/check');
+const { shutDownDocker } = require('./docker/desktop');
+const { syncVendorVolume } = require('./project/vendor-volume');
+const { runningProjects } = require('./tray');
 const {
   listContainers,
   stopProject,
@@ -28,19 +31,20 @@ const { projectStats, projectDisk, openShell } = require('./docker/stats');
 const { searchImages, listTags, imageExists, fetchVersionLists } = require('./docker/hub');
 const { normalizeExtraServices } = require('./stacks/extras');
 const { isEditable, describeForEdit, applyServiceEdit, diffServices } = require('./stacks/edit');
-const { buildLinks } = require('./stacks/links');
+const { buildLinks, workdirOf } = require('./stacks/links');
 const { normalizeDockerInput, packageRule } = require('./stacks/docker');
 const { normalizeFramework, frameworkCommand, FRAMEWORKS } = require('./stacks/python-frameworks');
 const { connectionText, connectionData, envFileText } = require('./stacks/connection');
 const { dbNameOf, dbUserOf, appPasswordOf, normalizeDbName, normalizeDbUser, normalizePassword, normalizeMail } = require('./stacks/services');
 const { ensureDatabases } = require('./docker/database');
-const { scaffoldLaravel, scaffoldNode, scaffoldDocker, finishInstall, writeLaravelSupport } = require('./project/scaffold');
+const { scaffoldLaravel, scaffoldNode, scaffoldDocker, finishInstall, writeLaravelSupport, writePhpSettings } = require('./project/scaffold');
 const { detectProject } = require('./project/detect');
 const { installProject, restoreLaravel, userArgs, INSTALLABLE_STACKS } = require('./project/installer');
 const { hostUser, volumeOwnerCommands } = require('./docker/hostuser');
 const { removeProjectFolder, isInside } = require('./project/folders');
 const { writeEnvFile } = require('./project/envfile');
 const { lanAddresses } = require('./network/lan');
+const { buildDiagnosis, gatherFacts, addFirewallRule } = require('./network/diagnose');
 const { getOrCreateSecret } = require('./store/secrets');
 const projects = require('./store/projects');
 const settings = require('./store/settings');
@@ -115,7 +119,12 @@ function projectsBaseDir() {
 }
 
 function projectsSettings() {
-  return { projectsDir: projectsBaseDir(), defaultDir: defaultProjectsDir(), isDefault: projectsBaseDir() === defaultProjectsDir() };
+  return {
+    projectsDir: projectsBaseDir(),
+    defaultDir: defaultProjectsDir(),
+    isDefault: projectsBaseDir() === defaultProjectsDir(),
+    stopDockerOnExit: settings.stopDockerOnExit(),
+  };
 }
 
 function requireSpec(name) {
@@ -399,6 +408,10 @@ function registerIpcHandlers() {
     settings.resetProjectsDir();
     return projectsSettings();
   });
+  handle('settings:setStopDockerOnExit', (value) => {
+    settings.setStopDockerOnExit(value);
+    return projectsSettings();
+  });
 
   // ---------- Existing project (a folder the user already has, for example a git clone) ----------
 
@@ -474,7 +487,11 @@ function registerIpcHandlers() {
   // everything is running, so Docker recreates what changed and removes what is gone.
   handle('project:start', async (name, options) => {
     const spec = requireSpec(name);
-    const apply = Boolean(options) && options.apply === true;
+    // `rebuild` builds the PHP image again from nothing (the Rebuild button). It always applies the project.
+    const rebuild = Boolean(options) && options.rebuild === true;
+    const apply = rebuild || (Boolean(options) && options.apply === true);
+    // custom.ini must exist before Docker mounts it. Older projects get an empty one here.
+    if (spec.stack === 'laravel') writePhpSettings(spec);
     const config = applySavedPorts(configForStart(spec), spec.hostPorts);
 
     if (!apply && (await isProjectFullyRunning(spec.name, config.services.map((svc) => svc.name)))) {
@@ -518,7 +535,18 @@ function registerIpcHandlers() {
       await streamDocker(args, log, { timeout: 10 * 60 * 1000 });
     }
 
-    const res = await setupProject({ composeFile: file, projectName: spec.name, config: resolved, report, log });
+    const res = await setupProject({ composeFile: file, projectName: spec.name, config: resolved, report, log, rebuild });
+    // The image now has these extensions, so the "rebuild needed" notice can go away.
+    if (res.ok && spec.stack === 'laravel') projects.updateSpec(spec.name, { phpBuilt: spec.phpExtensions || [] });
+    if (res.ok && spec.stack === 'laravel' && spec.vendorVolume === true) {
+      // vendor/ is in a Docker volume: fill it the first time, and after composer.lock changed.
+      report('up', null, 'Preparing the vendor volume');
+      const synced = await syncVendorVolume({ projectName: spec.name, folder: spec.folder, log });
+      if (!synced.ok) {
+        res.ok = false;
+        res.stderr = `Vendor volume: ${synced.error}. Turn off "Keep vendor in a Docker volume" in the project's Settings tab to go back.`;
+      }
+    }
     if (res.ok) {
       // Node apps need npm install first. Wait here so the progress bar stays up until the app answers.
       const ready = await waitForApp({ projectName: spec.name, config: resolved, report, log });
@@ -578,7 +606,17 @@ function registerIpcHandlers() {
     const after = configForPorts(next);
     validateProject(after);
 
+    // The PHP image is rebuilt from this Dockerfile on the next start, so write it only when the list changed.
+    // php.ini is written on every start (see project:start), but also here, so the file is there at once.
+    if (spec.stack === 'laravel') {
+      const extensionsChanged = JSON.stringify(spec.phpExtensions || []) !== JSON.stringify(next.phpExtensions || []);
+      writePhpSettings(next, { dockerfile: extensionsChanged });
+    }
+
     const saved = projects.updateSpec(spec.name, {
+      phpExtensions: next.phpExtensions,
+      phpIni: next.phpIni,
+      vendorVolume: next.vendorVolume,
       options: next.options,
       extraServices: next.extraServices,
       dbName: next.dbName,
@@ -696,6 +734,7 @@ function registerIpcHandlers() {
       config: configForPorts(spec),
       ports: knownPorts(spec),
       composeFile: path.join(dataDir(), 'projects', spec.name, 'compose.json'),
+      folder: spec.folder,
       running: await isProjectRunning(spec.name),
       lan: {
         enabled: spec.lanShare === true,
@@ -704,6 +743,27 @@ function registerIpcHandlers() {
       },
     });
   });
+
+  // "Why can't another computer open my site?" Checks run on this computer; nothing is changed.
+  function mainWebHostPort(spec) {
+    const hit = knownPorts(spec).find((p) => p.service === mainWebService(spec));
+    return hit ? hit.host : null;
+  }
+
+  handle('project:testAccess', async (name) => {
+    const spec = requireSpec(name);
+    const port = mainWebHostPort(spec);
+    const facts = await gatherFacts({
+      running: await isProjectRunning(spec.name),
+      lanShare: spec.lanShare === true,
+      addresses: lanAddresses().map((a) => a.address),
+      port,
+    });
+    return { port, ...buildDiagnosis(facts) };
+  });
+
+  // Adds the Windows Firewall rule for the project's web port (Windows asks the user for permission).
+  handle('project:allowFirewall', async (name) => addFirewallRule(mainWebHostPort(requireSpec(name))));
 
   // Live numbers for the details page. Only the project name is sent; the service is checked by openShell.
   handle('project:stats', (name) => projectStats(requireSpec(name).name));
@@ -718,11 +778,12 @@ function registerIpcHandlers() {
   });
   handle('project:shell', (name, service) => {
     const spec = requireSpec(name);
-    const known = configForPorts(spec).services.some((svc) => svc.name === service);
-    if (!known) {
+    const found = configForPorts(spec).services.find((svc) => svc.name === service);
+    if (!found) {
       throw new Error('This project has no such service');
     }
-    return openShell(spec.name, service);
+    // The terminal starts in the project folder inside the container (for example /var/www/html).
+    return openShell(spec.name, service, { workdir: workdirOf(found, spec.folder) });
   });
 
   // Opens the web page of one published port. The renderer sends a service name and a container port,
@@ -755,16 +816,21 @@ function registerIpcHandlers() {
   handle('project:connectionData', (name) => {
     const spec = requireSpec(name);
     const creds = credentialsFor(spec);
-    return connectionData({
-      config: buildProject(spec, creds.root),
-      ports: knownPorts(spec),
-      password: creds.app,
-      rootPassword: creds.root,
-      dbName: dbNameOf(spec),
-      dbUser: creds.user,
-      redisPassword: creds.redis,
-      mail: spec.mail,
-    });
+    return {
+      ...connectionData({
+        config: buildProject(spec, creds.root),
+        ports: knownPorts(spec),
+        password: creds.app,
+        rootPassword: creds.root,
+        dbName: dbNameOf(spec),
+        dbUser: creds.user,
+        redisPassword: creds.redis,
+        mail: spec.mail,
+      }),
+      // For the "Slow on Windows?" tip in the Credentials tab.
+      folder: spec.folder || '',
+      platform: process.platform,
+    };
   });
 
   handle('project:connection', (name) => {
@@ -936,6 +1002,21 @@ function sendToRenderer(channel, payload) {
   }
 }
 
+// The tray menu lists the running projects and their services. It is renewed a moment after containers change.
+let trayTimer = null;
+function scheduleTrayRefresh() {
+  if (!tray || !tray.updateProjects) return;
+  clearTimeout(trayTimer);
+  trayTimer = setTimeout(async () => {
+    try {
+      tray.updateProjects(runningProjects(await listContainers(null)));
+    } catch (err) {
+      // Docker is off: nothing runs.
+      if (tray && !tray.isDestroyed()) tray.updateProjects([]);
+    }
+  }, 600);
+}
+
 // Brings the window back from the tray (or makes a new one if it was really closed).
 function showWindow() {
   if (!mainWindow) createWindow();
@@ -1016,7 +1097,14 @@ app.whenReady().then(() => {
   createWindow();
   setupMenu();
   try {
-    tray = createTray({ show: showWindow, quit: () => app.quit() });
+    tray = createTray({
+      show: showWindow,
+      quit: () => app.quit(),
+      openProject: (name) => {
+        showWindow();
+        sendToRenderer('menu:action', `open-project:${name}`);
+      },
+    });
   } catch (err) {
     // Some Linux desktops have no tray. Then the close button quits, as before.
     console.warn(`No tray icon: ${err.message}`);
@@ -1025,20 +1113,45 @@ app.whenReady().then(() => {
 
   // Container status comes from Docker events, not polling.
   stopEvents = startEvents(
-    (change) => sendToRenderer('containers:changed', change),
+    (change) => {
+      sendToRenderer('containers:changed', change);
+      scheduleTrayRefresh();
+    },
     () => {},
     // Docker went away or came back: the window checks Docker again at once.
-    (state) => sendToRenderer('docker:state', state),
+    (state) => {
+      sendToRenderer('docker:state', state);
+      scheduleTrayRefresh();
+    },
   );
+  scheduleTrayRefresh();
 
   app.on('activate', () => showWindow());
 });
 
-app.on('before-quit', () => {
+// Exit also turns Docker off (Settings > Docker), so it stops using memory. The quit waits for that:
+// the first before-quit is held back, and the app quits for real when Docker has answered.
+let dockerShutdown = 'no';
+
+app.on('before-quit', (event) => {
   quitting = true;
   if (stopEvents) {
     stopEvents();
     stopEvents = null;
+  }
+  if (dockerShutdown === 'no' && gotSingleInstanceLock && app.isReady() && settings.stopDockerOnExit()) {
+    dockerShutdown = 'running';
+    event.preventDefault();
+    if (mainWindow) mainWindow.hide();
+    shutDownDocker({ projectNames: projects.listSpecs().map((s) => s.name), stopProject })
+      .catch((err) => console.warn(`Could not stop Docker: ${err.message}`))
+      .finally(() => {
+        dockerShutdown = 'done';
+        app.quit();
+      });
+  } else if (dockerShutdown === 'running') {
+    // A second Exit while Docker is still stopping: keep waiting.
+    event.preventDefault();
   }
 });
 

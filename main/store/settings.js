@@ -7,16 +7,18 @@ const path = require('path');
 //   projectsDir  where NEW projects are created (empty = the default folder)
 //   projectDirs  every folder that was ever used for projects, so a project made earlier in another
 //                folder can still be deleted together with its files
+//   stopDockerOnExit  Exit also stops Docker Desktop (on by default, it frees the memory Docker holds)
 let file = null;
-let data = { projectsDir: '', projectDirs: [] };
+let data = { projectsDir: '', projectDirs: [], stopDockerOnExit: true };
 
 function init(dir) {
   file = path.join(dir, 'settings.json');
-  data = { projectsDir: '', projectDirs: [] };
+  data = { projectsDir: '', projectDirs: [], stopDockerOnExit: true };
   try {
     const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (typeof saved.projectsDir === 'string') data.projectsDir = saved.projectsDir;
     if (Array.isArray(saved.projectDirs)) data.projectDirs = saved.projectDirs.filter((d) => typeof d === 'string');
+    if (typeof saved.stopDockerOnExit === 'boolean') data.stopDockerOnExit = saved.stopDockerOnExit;
   } catch (err) {
     // No file yet, or a broken one: start with the defaults.
   }
@@ -71,4 +73,14 @@ function resetProjectsDir() {
   save();
 }
 
-module.exports = { init, projectsBaseDir, knownProjectDirs, setProjectsDir, resetProjectsDir };
+function stopDockerOnExit() {
+  return data.stopDockerOnExit;
+}
+
+function setStopDockerOnExit(value) {
+  if (typeof value !== 'boolean') throw new Error('Invalid value');
+  data.stopDockerOnExit = value;
+  save();
+}
+
+module.exports = { init, projectsBaseDir, knownProjectDirs, setProjectsDir, resetProjectsDir, stopDockerOnExit, setStopDockerOnExit };

@@ -5,6 +5,7 @@ const { NAME_RE } = require('../compose/generate');
 const svc = require('./services');
 
 const registry = require('../registry/versions');
+const { iniHash } = require('./php-extensions');
 
 // Node for the Vite dev server of a Laravel project. Fixed, as it was before versions could be chosen.
 const NODE_VERSION = '22';
@@ -36,9 +37,20 @@ function normalizeOptions(options) {
   return result;
 }
 
+// The php.ini additions of a project. They are mounted after the image's own files, so they win.
+const PHP_INI_FILE = 'custom.ini';
+const PHP_INI_TARGET = '/usr/local/etc/php/conf.d/zz-custom.ini';
+
+// The folder with the PHP Dockerfile and custom.ini. An existing project keeps it in ProjectDockHub's
+// data folder (supportDir), a new project in its own folder (docker/php).
+function phpSupportDir(spec) {
+  return path.join(spec.supportDir || path.join(spec.folder, 'docker'), 'php');
+}
+
 // Builds the service list for a Laravel project.
 // `folder` is the project folder on the user's machine. It is mounted into nginx, PHP and Node.
-function laravelProject({ name, phpVersion, folder, dbPassword, options, versions, supportDir }) {
+// `vendorVolume` keeps vendor/ in a Docker volume, so PHP reads it fast (see project/vendor-volume.js).
+function laravelProject({ name, phpVersion, folder, dbPassword, options, versions, supportDir, phpIni, vendorVolume }) {
   if (typeof name !== 'string' || !NAME_RE.test(name)) {
     throw new Error('Invalid project name');
   }
@@ -68,7 +80,13 @@ function laravelProject({ name, phpVersion, folder, dbPassword, options, version
       name: 'php',
       image: `envhub-${name}-php`,
       build: { context: phpContext, dockerfile: 'Dockerfile' },
-      volumes: [{ source: folder, target: webRoot }],
+      // The hash makes Docker recreate the container when php.ini changes, so PHP reads the new file.
+      env: { ENVHUB_PHP_INI: iniHash(phpIni) },
+      volumes: [
+        { source: folder, target: webRoot },
+        { source: path.join(phpContext, PHP_INI_FILE), target: PHP_INI_TARGET, readOnly: true },
+      ],
+      ...(vendorVolume === true ? { dataVolumes: [{ name: 'vendor', target: `${webRoot}/vendor` }] } : {}),
     },
   ];
 
@@ -94,4 +112,4 @@ function laravelProject({ name, phpVersion, folder, dbPassword, options, version
   return { name, stack: 'laravel', phpVersion, services };
 }
 
-module.exports = { laravelProject, normalizeOptions, VITE_COMMAND };
+module.exports = { laravelProject, normalizeOptions, VITE_COMMAND, phpSupportDir, PHP_INI_FILE };

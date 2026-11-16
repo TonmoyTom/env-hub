@@ -4,7 +4,7 @@
 // shared into its containers. Pure: it takes the project config and what Docker reported, and returns plain data.
 
 // The volume names that hold things that can be installed again (a cache), not your own data.
-const CACHE_VOLUMES = new Set(['packages', 'node-modules', 'go', 'registry', 'target', 'm2', 'gems']);
+const CACHE_VOLUMES = new Set(['packages', 'node-modules', 'vendor', 'go', 'registry', 'target', 'm2', 'gems']);
 
 // What a volume is for, in words for the user.
 function purposeOf(volumeName) {

@@ -9,6 +9,8 @@ const { portableFiles } = require('./portable-compose');
 const { languageOf } = require('../stacks/languages');
 const { mergeEnv } = require('./installer');
 const { frameworkFiles } = require('../stacks/python-frameworks');
+const { dockerfileParts } = require('../stacks/php-extensions');
+const { phpSupportDir, PHP_INI_FILE } = require('../stacks/laravel');
 
 const GITIGNORE = '.env\nvendor/\nnode_modules/\n';
 
@@ -38,14 +40,21 @@ function finishInstall(folder, spec) {
   writePortableFiles(folder, spec, { installed: true, extraEnv });
 }
 
-function phpDockerfile(version) {
-  return `FROM php:${version}-fpm
+// `extensions` are the names chosen in Edit services (see stacks/php-extensions.js).
+function phpDockerfile(version, extensions = []) {
+  const parts = dockerfileParts(extensions);
+  const steps = [
+    'apt-get update',
+    `apt-get install -y --no-install-recommends git unzip libzip-dev libonig-dev libicu-dev${parts.packages.map((p) => ` ${p}`).join('')}`,
+    ...parts.configure,
+    `docker-php-ext-install pdo_mysql mbstring zip bcmath intl${parts.install.map((e) => ` ${e}`).join('')}`,
+    ...parts.pecl.flatMap((e) => [`pecl install ${e}`, `docker-php-ext-enable ${e}`]),
+    'rm -rf /var/lib/apt/lists/*',
+  ];
+  const header = extensions.length > 0 ? '# Extensions are set in ProjectDockHub (Edit services). Changes here are replaced the next time they are saved.\n' : '';
+  return `${header}FROM php:${version}-fpm
 
-RUN apt-get update \\
- && apt-get install -y --no-install-recommends \\
-      git unzip libzip-dev libonig-dev libicu-dev \\
- && docker-php-ext-install pdo_mysql mbstring zip bcmath intl \\
- && rm -rf /var/lib/apt/lists/*
+RUN ${steps.join(' \\\n && ')}
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
@@ -221,4 +230,17 @@ function scaffoldDocker({ baseDir, name, image, containerPort, command, options,
   return folder;
 }
 
-module.exports = { scaffoldLaravel, scaffoldNode, scaffoldDocker, finishInstall, writeLaravelSupport };
+// Writes the PHP settings of a Laravel project next to its PHP Dockerfile:
+//   custom.ini   the php.ini lines. Always written, because Docker cannot mount a file that is missing.
+//   Dockerfile   only with { dockerfile: true }, after the list of extensions changed.
+function writePhpSettings(spec, { dockerfile = false } = {}) {
+  const dir = phpSupportDir(spec);
+  fs.mkdirSync(dir, { recursive: true });
+  if (dockerfile) {
+    if (!registry.has('php', spec.phpVersion)) throw new Error('Unsupported PHP version');
+    fs.writeFileSync(path.join(dir, 'Dockerfile'), phpDockerfile(spec.phpVersion, spec.phpExtensions || []));
+  }
+  fs.writeFileSync(path.join(dir, PHP_INI_FILE), spec.phpIni || '');
+}
+
+module.exports = { scaffoldLaravel, scaffoldNode, scaffoldDocker, finishInstall, writeLaravelSupport, writePhpSettings, phpDockerfile };

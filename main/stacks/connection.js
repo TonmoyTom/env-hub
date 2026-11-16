@@ -264,6 +264,9 @@ function connectionData({ config, ports, password, rootPassword, dbName = DB_NAM
       docker: envLines(config, creds, has, 'docker', ports).join('\n'),
       host: envLines(config, creds, has, 'host', ports).join('\n'),
     },
+    // True when the app itself is a service of this project (php, node or app). Then the
+    // "outside Docker" .env is most likely the wrong one, and the window says so.
+    appInDocker: ['php', 'node', 'app'].some(has),
     databases,
     pages,
     extras,

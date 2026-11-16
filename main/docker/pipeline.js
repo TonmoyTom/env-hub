@@ -182,11 +182,12 @@ async function pullImages(images, report, log = () => {}) {
 }
 
 // Builds the images of the project (the PHP image). Progress comes from the build step numbers.
-async function buildImages(composeArgs, report, log = () => {}) {
+// `noCache` builds every step again (the Rebuild button), instead of reusing the cached ones.
+async function buildImages(composeArgs, report, log = () => {}, { noCache = false } = {}) {
   let best = 0;
 
   const res = await streamDocker(
-    [...composeArgs, 'build'],
+    [...composeArgs, 'build', ...(noCache ? ['--no-cache'] : [])],
     (line) => {
       log(line);
       const fraction = parseBuildStep(line);
@@ -210,7 +211,7 @@ async function buildImages(composeArgs, report, log = () => {}) {
 // Downloads and builds what is missing, then starts the containers.
 // `report(step, fraction, detail)` is called as the work moves on. fraction is 0 to 1 or null.
 // Resolves like runDocker: { ok, stdout, stderr }.
-async function setupProject({ composeFile, projectName, config, report, log = () => {} }) {
+async function setupProject({ composeFile, projectName, config, report, log = () => {}, rebuild = false }) {
   const composeArgs = ['compose', '-f', composeFile, '-p', `envhub-${projectName}`];
 
   const images = [...new Set(config.services.filter((s) => !s.build).map((s) => s.image))];
@@ -220,8 +221,8 @@ async function setupProject({ composeFile, projectName, config, report, log = ()
 
   if (config.services.some((s) => s.build)) {
     report('build', 0, 'Starting the build');
-    log('$ docker compose build');
-    const built = await buildImages(composeArgs, report, log);
+    log(rebuild ? '$ docker compose build --no-cache' : '$ docker compose build');
+    const built = await buildImages(composeArgs, report, log, { noCache: rebuild });
     if (!built.ok) return built;
   }
 

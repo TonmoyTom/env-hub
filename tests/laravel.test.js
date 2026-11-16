@@ -62,7 +62,12 @@ test('generated compose for laravel validates and uses bind mounts', () => {
     type: 'bind',
     source: folder,
     target: '/var/www/html'
-  }, ]);
+  }, {
+    type: 'bind',
+    source: path.join(folder, 'docker', 'php', 'custom.ini'),
+    target: '/usr/local/etc/php/conf.d/zz-custom.ini',
+    read_only: true
+  }]);
   assert.deepEqual(compose.services.nginx.ports, ['127.0.0.1:8080:80']);
 });
 

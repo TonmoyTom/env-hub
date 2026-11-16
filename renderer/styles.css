@@ -1927,6 +1927,49 @@ button.primary-soft:hover {
   margin: 0;
 }
 
+.cred-warning {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--warn);
+  background: var(--warn-bg);
+}
+
+.code-input {
+  width: 100%;
+  font-family: ui-monospace, Consolas, monospace;
+  resize: vertical;
+}
+
+.cred-tip-top {
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
+  border-radius: 10px;
+  background: var(--warn-bg);
+}
+
+.cred-tip-top summary {
+  color: var(--warn);
+}
+
+.cred-tip summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.cred-tip h4 {
+  margin: 14px 0 4px;
+}
+
+.cred-tip ol {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
+
+.cred-warning[hidden] {
+  display: none;
+}
+
 .cred-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -2783,6 +2826,11 @@ button.danger-solid:hover {
   background: var(--danger-bg);
 }
 
+.note-warn {
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+  background: var(--warn-bg);
+}
+
 .note-busy {
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
   background: var(--accent-soft);
@@ -3558,4 +3606,541 @@ button.stack-card.on {
   margin-top: 24px;
   padding-top: 18px;
   border-top: 1px solid var(--border);
+}
+
+.diag-result { display: flex; flex-direction: column; gap: 8px; }
+.diag-summary { margin: 0; font-weight: 600; }
+.diag-step { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.diag-step p { margin: 0; }
+.diag-ok > strong, .diag-summary.diag-ok { color: var(--ok); }
+.diag-bad > strong, .diag-summary.diag-bad { color: var(--danger); }
+
+.cred-tip code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; padding: 1px 5px; border-radius: 4px; background: var(--subtle); overflow-wrap: anywhere; }
+.cred-tip li { margin-bottom: 8px; }
+#lan-manual { margin-top: 10px; }
+
+/* =====================================================================
+   Visual polish: depth, soft light, calmer motion.
+   Only looks change here. No layout or behaviour depends on this block.
+   ===================================================================== */
+
+:root {
+  --shadow-lg: 0 2px 4px rgba(16, 24, 40, 0.04), 0 24px 48px -20px rgba(42, 30, 120, 0.28);
+  --ring: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+    --shadow-lg: 0 24px 48px -20px rgba(0, 0, 0, 0.85);
+  }
+}
+
+:root[data-theme="dark"] {
+  --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  --shadow-lg: 0 24px 48px -20px rgba(0, 0, 0, 0.85);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* ---------- Page background: a soft glow behind the content ---------- */
+
+.shell {
+  background:
+    radial-gradient(900px 420px at 12% -8%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 70%),
+    radial-gradient(700px 380px at 100% 0%, color-mix(in srgb, #2563eb 8%, transparent), transparent 70%);
+  background-repeat: no-repeat;
+}
+
+/* A page fades in when you switch to it. */
+.content > section {
+  animation: view-in 0.26s var(--ease);
+}
+
+@keyframes view-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- Sidebar ---------- */
+
+.sidebar {
+  background:
+    radial-gradient(260px 200px at 0% 0%, rgba(124, 92, 255, 0.2), transparent 70%),
+    linear-gradient(180deg, #0d1226 0%, #070a15 100%);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.brand-mark {
+  box-shadow: 0 8px 20px -6px rgba(124, 92, 255, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.nav-item {
+  position: relative;
+  transition: background 0.16s, color 0.16s;
+}
+
+.nav-item svg {
+  flex: none;
+  opacity: 0.8;
+  transition: opacity 0.16s, transform 0.16s var(--ease);
+}
+
+.nav-item:hover svg {
+  opacity: 1;
+  transform: scale(1.08);
+}
+
+.nav-item[aria-current="page"] {
+  background: linear-gradient(90deg, rgba(124, 92, 255, 0.34), rgba(124, 92, 255, 0.1));
+  box-shadow: inset 0 0 0 1px rgba(160, 140, 255, 0.22);
+}
+
+.nav-item[aria-current="page"] svg {
+  opacity: 1;
+  color: #b9a9ff;
+}
+
+.nav-item[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: -14px;
+  top: 9px;
+  bottom: 9px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(180deg, #a08cff, #4f7cff);
+  box-shadow: 0 0 12px rgba(140, 115, 255, 0.9);
+}
+
+.nav-item[aria-current="page"] .nav-count {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.nav-count {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-foot {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
+  backdrop-filter: blur(6px);
+}
+
+@media (max-width: 1000px) {
+  .nav-item[aria-current="page"]::before {
+    display: none;
+  }
+}
+
+/* ---------- Buttons ---------- */
+
+button {
+  transition: background 0.16s, border-color 0.16s, color 0.16s, box-shadow 0.16s, filter 0.16s,
+    transform 0.16s var(--ease);
+}
+
+button:not([class]):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+.sidebar-foot button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.seg button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  color: var(--fg);
+}
+
+.seg button[aria-pressed="true"],
+.seg button[aria-pressed="true"]:hover {
+  background: var(--surface);
+  color: var(--accent-ink);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.1), 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+button.primary {
+  background: linear-gradient(135deg, #7a55ff 0%, #5b3df5 45%, #2f6bf0 100%);
+  box-shadow: 0 10px 22px -10px rgba(91, 61, 245, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  text-shadow: 0 1px 0 rgba(20, 10, 80, 0.25);
+}
+
+button.primary:hover:not(:disabled) {
+  filter: brightness(1.07);
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px -10px rgba(91, 61, 245, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+button.primary:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+}
+
+button.danger-solid {
+  box-shadow: 0 10px 22px -12px color-mix(in srgb, var(--danger) 80%, transparent);
+}
+
+.link-back {
+  padding: 4px 10px 4px 6px;
+  margin-left: -6px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.link-back:hover {
+  background: var(--accent-soft);
+}
+
+/* ---------- Cards ---------- */
+
+.card:not(.bare),
+.stat,
+.detail-hero,
+.ov-card {
+  box-shadow: var(--shadow-sm), 0 12px 28px -22px rgba(42, 30, 120, 0.25);
+}
+
+.page-head h1 {
+  font-size: 30px;
+}
+
+.page-head p {
+  font-size: 14.5px;
+}
+
+/* ---------- Numbers at the top of the Projects page ---------- */
+
+.stat {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s var(--ease), box-shadow 0.2s, border-color 0.2s;
+}
+
+.stats:not(#detail-stats) .stat::after {
+  content: "";
+  position: absolute;
+  right: -30px;
+  top: -30px;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 14%, transparent), transparent);
+  pointer-events: none;
+}
+
+.stat:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+  box-shadow: var(--shadow-lg);
+}
+
+.stat-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.stat-value {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Search ---------- */
+
+input[type="search"].search {
+  padding-left: 38px;
+  border-radius: 12px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238a92a8' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 13px 50%;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ---------- Project cards ---------- */
+
+.pcard {
+  position: relative;
+  border-radius: 20px;
+  box-shadow: var(--shadow-sm), 0 14px 32px -24px rgba(42, 30, 120, 0.35);
+  transition: transform 0.22s var(--ease), box-shadow 0.22s, border-color 0.22s;
+}
+
+/* A thin line in the color of the stack, on top of the card. */
+.pcard::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--brand, #7c5cff), color-mix(in srgb, var(--brand, #7c5cff) 35%, transparent));
+  opacity: 0.85;
+}
+
+.pcard-skel::before {
+  display: none;
+}
+
+.pcard:not(.pcard-skel):hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--brand, #7c5cff) 40%, var(--border));
+  box-shadow: 0 2px 4px rgba(16, 24, 40, 0.04),
+    0 26px 48px -22px color-mix(in srgb, var(--brand, #7c5cff) 55%, transparent);
+}
+
+.pcard-head {
+  padding-top: 20px;
+  background:
+    radial-gradient(220px 120px at 0% 0%, color-mix(in srgb, var(--brand, #7c5cff) 22%, transparent), transparent 75%),
+    linear-gradient(180deg, color-mix(in srgb, var(--brand, #7c5cff) 9%, transparent) 0%, transparent 100%);
+}
+
+.pcard-mark {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--brand, #7c5cff) 82%, #ffffff), var(--brand, #7c5cff));
+  box-shadow: 0 10px 20px -10px var(--brand, #7c5cff), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transition: transform 0.22s var(--ease);
+}
+
+.pcard:hover .pcard-mark {
+  transform: scale(1.06) rotate(-3deg);
+}
+
+.pcard-ports {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--subtle);
+}
+
+.pcard-ports:empty {
+  display: none;
+}
+
+.svc-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+
+.pcard-foot {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  background: color-mix(in srgb, var(--subtle) 55%, transparent);
+}
+
+.pcard-body {
+  padding-bottom: 16px;
+}
+
+/* ---------- Status pills ---------- */
+
+.status {
+  padding: 3px 11px;
+  letter-spacing: 0.01em;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 22%, transparent);
+}
+
+/* ---------- Project details ---------- */
+
+.detail-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 22px 24px;
+  background:
+    radial-gradient(420px 180px at 0% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 75%),
+    var(--surface);
+}
+
+.detail-hero > * {
+  position: relative;
+}
+
+.hero-title h1 {
+  font-size: 26px;
+}
+
+.tabs,
+.seg {
+  box-shadow: inset 0 1px 2px rgba(16, 24, 40, 0.05);
+}
+
+.ov-card:hover {
+  box-shadow: var(--shadow-lg);
+}
+
+.svc-mark,
+.vol-mark {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.lk-card,
+.vol-card,
+.cred-card {
+  transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s var(--ease);
+}
+
+.lk-card:hover,
+.vol-card:hover,
+.cred-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  box-shadow: 0 16px 32px -24px rgba(42, 30, 120, 0.45);
+}
+
+.code-box,
+.vol-val {
+  transition: border-color 0.15s;
+}
+
+.code-box:hover,
+.vol-val:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+/* ---------- Terminal and logs: one dark look ---------- */
+
+.terminal,
+.term,
+.code-block,
+.detail-panel .logs,
+#logs-card .logs {
+  background: linear-gradient(180deg, #0d1120, #090c17);
+  border: 1px solid #1d2438;
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.terminal {
+  color: #cbd5e1;
+}
+
+/* ---------- Progress ---------- */
+
+.track {
+  height: 10px;
+  box-shadow: inset 0 1px 2px rgba(16, 24, 40, 0.12);
+}
+
+.fill {
+  background: linear-gradient(90deg, #7a55ff, #2f6bf0);
+  box-shadow: 0 0 12px rgba(109, 74, 255, 0.55);
+}
+
+.stat-bar {
+  height: 6px;
+}
+
+.steps li.done .mark {
+  box-shadow: 0 0 0 3px var(--ok-bg);
+}
+
+/* ---------- Containers list ---------- */
+
+#container-list .container-row {
+  margin: 0 -10px;
+  padding: 12px 10px;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s;
+}
+
+#container-list .container-row:hover {
+  background: var(--subtle);
+}
+
+/* ---------- Empty states ---------- */
+
+.empty {
+  border-width: 1.5px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+}
+
+.empty-hero strong {
+  font-size: 22px;
+}
+
+/* ---------- Menus and dialogs ---------- */
+
+.popmenu {
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.modal-backdrop {
+  backdrop-filter: blur(6px);
+}
+
+.modal {
+  border-radius: 20px;
+}
+
+/* ---------- New project ---------- */
+
+.choice-card,
+button.stack-card {
+  transition: border-color 0.16s, background 0.16s, box-shadow 0.16s, transform 0.16s var(--ease);
+}
+
+.choice-card:hover,
+button.stack-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px -20px rgba(42, 30, 120, 0.5);
+}
+
+.choice-card:has(input:checked),
+button.stack-card.on {
+  box-shadow: var(--ring);
+}
+
+.choice-icon,
+.stack-mark {
+  transition: background 0.16s, color 0.16s, transform 0.16s var(--ease);
+}
+
+.stack-mark {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--brand) 82%, #ffffff), var(--brand));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.stepper li.active .step-num {
+  background: linear-gradient(135deg, #7a55ff, #2f6bf0);
+  border-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content > section {
+    animation: none;
+  }
+
+  .stat:hover,
+  .pcard:not(.pcard-skel):hover,
+  .pcard:hover .pcard-mark,
+  .nav-item:hover svg,
+  .choice-card:hover,
+  button.stack-card:hover,
+  button.primary:hover:not(:disabled) {
+    transform: none;
+  }
+}
+
+#settings-card .switch-row {
+  margin-top: 12px;
+}
+
+/* The slow-on-Windows tip lives in the Settings tab. No empty box when it is not shown. */
+#edit-slow-tip:empty {
+  display: none;
 }

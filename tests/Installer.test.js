@@ -406,15 +406,32 @@ test('connectionData gives the Credentials tab the same facts as the text, as da
   assert.deepStrictEqual(data.extras, [{ name: 'rabbitmq', image: 'rabbitmq:3', ports: [{ host: 15672, container: 15672 }], env: { RABBITMQ_DEFAULT_PASS: 'rb' } }]);
 });
 
-test('tray menu: Open ProjectDockHub and Exit', () => {
-  const { trayTemplate } = require('../main/tray');
+test('tray menu: running projects with their services, Open ProjectDockHub and Exit', () => {
+  const { trayTemplate, runningProjects } = require('../main/tray');
   const calls = [];
-  const items = trayTemplate({ show: () => calls.push('show'), quit: () => calls.push('quit') });
+  const actions = { show: () => calls.push('show'), quit: () => calls.push('quit'), openProject: (n) => calls.push(`open ${n}`) };
+
+  const none = trayTemplate(actions);
+  assert.deepStrictEqual(none.filter((i) => i.label).map((i) => i.label), ['Open ProjectDockHub', 'Running projects', 'No project is running', 'Exit']);
+
+  const projects = runningProjects([
+    { project: 'shop', service: 'php', state: 'running' },
+    { project: 'shop', service: 'mysql', state: 'running' },
+    { project: 'shop', service: 'redis', state: 'exited' },
+    { project: 'old', service: 'php', state: 'exited' },
+    { project: null, service: 'x', state: 'running' },
+  ]);
+  assert.deepStrictEqual(projects, [{ name: 'shop', services: [{ name: 'mysql', running: true }, { name: 'php', running: true }, { name: 'redis', running: false }] }]);
+
+  const items = trayTemplate(actions, projects);
   const labels = items.filter((i) => i.label).map((i) => i.label);
-  assert.deepStrictEqual(labels, ['Open ProjectDockHub', 'Exit']);
+  assert.deepStrictEqual(labels, ['Open ProjectDockHub', 'Running projects', 'shop  (2 of 3 running)', 'Exit']);
+  const shop = items.find((i) => i.submenu);
+  assert.deepStrictEqual(shop.submenu.filter((i) => i.label).map((i) => i.label), ['\u25CF  mysql', '\u25CF  php', '\u25CB  redis', 'Open project']);
+  shop.submenu.find((i) => i.label === 'Open project').click();
   items.find((i) => i.label === 'Exit').click();
   items.find((i) => i.label === 'Open ProjectDockHub').click();
-  assert.deepStrictEqual(calls, ['quit', 'show']);
+  assert.deepStrictEqual(calls, ['open shop', 'quit', 'show']);
 });
 
 test('describeVolumes lists data and cache volumes with their sizes, and the shared folders', () => {

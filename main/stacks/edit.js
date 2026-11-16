@@ -6,6 +6,7 @@ const { normalizeOptions } = require('./laravel');
 const { normalizeNodeOptions } = require('./node');
 const { normalizeExtraServices, MAX_EXTRAS } = require('./extras');
 const registry = require('../registry/versions');
+const { extensionList, normalizeExtensions, normalizePhpIni } = require('./php-extensions');
 const { normalizeDbName, dbNameOf, normalizeDbUser, dbUserOf, normalizePassword, normalizeMail } = require('./services');
 
 // Editing the services of a project that already exists.
@@ -38,13 +39,14 @@ function envText(env) {
 }
 
 // What the Edit services form shows: the tick boxes that fit the stack, and the extra services as text.
-function describeForEdit(spec) {
+function describeForEdit(spec, platform = process.platform) {
   assertEditable(spec);
   const options = currentOptions(spec);
   return {
     name: spec.name,
     stack: spec.stack,
     label: stackLabel(spec),
+    folder: spec.folder || '',
     optionKeys: Object.keys(options),
     options,
     dbName: dbNameOf(spec),
@@ -56,6 +58,19 @@ function describeForEdit(spec) {
     keepPackages: spec.keepPackages === true,
     versions: Object.fromEntries(registry.SERVICE_KEYS.map((key) => [key, registry.serviceVersion(spec.versions, key)])),
     mail: spec.mail || { host: '', port: '', username: '', password: '' },
+    // Only Laravel projects have a PHP container whose extensions and php.ini can be changed.
+    php: spec.stack === 'laravel'
+      ? {
+        extensions: normalizeExtensions(spec.phpExtensions),
+        available: extensionList(),
+        ini: spec.phpIni || '',
+        // vendor/ in a Docker volume. Linux reads the project folder at full speed, so it is not offered there.
+        vendorVolume: spec.vendorVolume === true,
+        vendorVolumeAvailable: platform !== 'linux',
+        // True when the saved list of extensions is not what the PHP image was last built with.
+        rebuildNeeded: JSON.stringify(normalizeExtensions(spec.phpExtensions)) !== JSON.stringify(normalizeExtensions(spec.phpBuilt)),
+      }
+      : null,
     extras: (spec.extraServices || []).map((extra) => ({
       name: extra.name,
       image: extra.image,
@@ -69,7 +84,7 @@ function describeForEdit(spec) {
 
 // Returns a copy of the spec with the new options and extra services. Throws on anything wrong.
 // Whatever the form leaves out stays as it is.
-function applyServiceEdit(spec, input) {
+function applyServiceEdit(spec, input, platform = process.platform) {
   assertEditable(spec);
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('Invalid input');
@@ -103,9 +118,20 @@ function applyServiceEdit(spec, input) {
   // Mail: a missing field keeps the saved one. An empty host clears it (Mailpit is used again).
   const mail = input.mail === undefined ? spec.mail : normalizeMail(input.mail) || undefined;
 
+  // PHP extensions and php.ini: Laravel only. A missing field keeps the saved value, an empty one clears it.
+  const isLaravel = spec.stack === 'laravel';
+  const phpExtensions = !isLaravel || input.phpExtensions === undefined
+    ? spec.phpExtensions
+    : normalizeExtensions(input.phpExtensions);
+  const phpIni = !isLaravel || input.phpIni === undefined ? spec.phpIni : normalizePhpIni(input.phpIni);
+  const vendorVolume = input.vendorVolume === undefined ? spec.vendorVolume : input.vendorVolume === true;
+
   return {
     ...spec,
     options,
+    phpExtensions: phpExtensions && phpExtensions.length > 0 ? phpExtensions : undefined,
+    phpIni: phpIni || undefined,
+    vendorVolume: vendorVolume === true && isLaravel && platform !== 'linux' ? true : undefined,
     extraServices: extraServices.length > 0 ? extraServices : undefined,
     dbName,
     dbUser,
