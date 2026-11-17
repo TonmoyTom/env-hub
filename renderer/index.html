@@ -1151,6 +1151,26 @@
               </label>
             </div>
 
+            <div id="edit-docker-files" class="form-section">
+              <div class="form-section-head">
+                <h3>Docker files</h3>
+                <p class="muted small">
+                  Writes the Docker setup of this project into its own
+                  folder, so it can be started without ProjectDockHub, here
+                  or on a server. Your own .env is never changed, and a file
+                  that is replaced is kept as .bak.
+                </p>
+              </div>
+              <div id="df-body" class="df-body"></div>
+              <div class="row-actions df-actions">
+                <button type="button" id="df-generate" class="primary-soft">
+                  Generate Docker files
+                </button>
+                <button type="button" id="df-open-folder">Open folder</button>
+              </div>
+              <p id="df-message" class="muted small" aria-live="polite"></p>
+            </div>
+
             <div id="edit-slow-tip" class="form-section"></div>
 
             <p id="edit-error" class="error small" hidden></p>

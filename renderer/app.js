@@ -3288,6 +3288,92 @@ function setEditBusy(busy) {
   el.editAddService.disabled = busy;
 }
 
+// ---------- Docker files (Settings tab) ----------
+
+const DF_STATUS = {
+  new: ['New', 'status-running'],
+  replace: ['Will be replaced (old one kept as .bak)', 'status-partly'],
+  same: ['Up to date', 'status-stopped'],
+};
+
+// Shows the services and the files "Generate Docker files" writes. Nothing is written here.
+function renderDockerFiles(data) {
+  const body = byId('df-body');
+  body.textContent = '';
+
+  const servicesTitle = makeElement('p', 'df-label');
+  servicesTitle.textContent = `Services (${data.services.length})`;
+  const chips = makeElement('div', 'chips');
+  for (const name of data.services) {
+    const chip = makeElement('span', 'svc-chip');
+    chip.textContent = name;
+    chips.appendChild(chip);
+  }
+
+  const filesTitle = makeElement('p', 'df-label');
+  filesTitle.textContent = 'Files';
+  const list = makeElement('div', 'df-files');
+  for (const file of data.files) {
+    const row = makeElement('div', 'df-file');
+    const name = makeElement('code', 'df-path');
+    name.textContent = file.path;
+    const [text, cls] = DF_STATUS[file.status] || DF_STATUS.new;
+    const pill = makeElement('span', `status ${cls}`);
+    pill.textContent = text;
+    row.append(name, pill);
+    list.appendChild(row);
+  }
+
+  const startTitle = makeElement('p', 'df-label');
+  startTitle.textContent = 'Start it without ProjectDockHub (stop the project here first, the ports are the same)';
+  const box = makeElement('div', 'code-box');
+  const code = makeElement('code', '');
+  code.textContent = data.command;
+  const copy = addButton(box, 'Copy', () => copyWithFeedback(data.command, copy));
+  box.prepend(code);
+
+  body.append(servicesTitle, chips, filesTitle, list, startTitle, box);
+}
+
+async function loadDockerFiles(name) {
+  const section = byId('edit-docker-files');
+  const message = byId('df-message');
+  section.dataset.project = name;
+  message.textContent = '';
+  try {
+    const data = await window.envhub.dockerFiles(name);
+    if (section.dataset.project !== name) return;
+    byId('df-generate').disabled = false;
+    renderDockerFiles(data);
+  } catch (err) {
+    if (section.dataset.project !== name) return;
+    byId('df-body').textContent = '';
+    byId('df-generate').disabled = true;
+    message.textContent = `Docker files: ${ipcMessage(err)}`;
+  }
+}
+
+async function generateDockerFilesNow() {
+  const name = byId('edit-docker-files').dataset.project;
+  const button = byId('df-generate');
+  const message = byId('df-message');
+  if (!name) return;
+  button.disabled = true;
+  try {
+    const res = await window.envhub.generateDockerFiles(name);
+    await loadDockerFiles(name);
+    const parts = [];
+    if (res.written.length > 0) parts.push(`Created in ${res.folder}: ${res.written.join(', ')}.`);
+    else parts.push('All files were already up to date. Nothing was changed.');
+    if (res.backups.length > 0) parts.push(`Old files kept as: ${res.backups.join(', ')}.`);
+    message.textContent = parts.join(' ');
+  } catch (err) {
+    message.textContent = `Could not write the Docker files: ${ipcMessage(err)}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function renderEdit(details) {
   editState.name = details.name;
   editState.running = details.running === true;
@@ -3323,6 +3409,7 @@ function renderEdit(details) {
   el.editPython.hidden = !details.packagesLabel;
   el.editKeepPackagesText.textContent = details.packagesLabel || '';
   el.editKeepPackages.checked = details.keepPackages === true;
+  loadDockerFiles(details.name);
   // Slow on Windows: the fix is part of the Settings tab, under the vendor switch.
   el.editSlowTip.textContent = '';
   if (isWindowsBrowser() && details.folder) el.editSlowTip.appendChild(slowOnWindowsTip(details.folder));
@@ -3778,6 +3865,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   el.button.addEventListener('click', checkDocker);
   el.dockerStart.addEventListener('click', startDocker);
+  byId('df-generate').addEventListener('click', generateDockerFilesNow);
+  byId('df-open-folder').addEventListener('click', () => {
+    const name = byId('edit-docker-files').dataset.project;
+    if (name) runProjectAction('Folder', 'openFolder', name);
+  });
   el.dockerDownload.addEventListener('click', async () => {
     try {
       await window.envhub.downloadDocker();

@@ -243,4 +243,4 @@ function writePhpSettings(spec, { dockerfile = false } = {}) {
   fs.writeFileSync(path.join(dir, PHP_INI_FILE), spec.phpIni || '');
 }
 
-module.exports = { scaffoldLaravel, scaffoldNode, scaffoldDocker, finishInstall, writeLaravelSupport, writePhpSettings, phpDockerfile };
+module.exports = { scaffoldLaravel, scaffoldNode, scaffoldDocker, finishInstall, writeLaravelSupport, writePhpSettings, phpDockerfile, NGINX_CONF };

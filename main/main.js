@@ -14,6 +14,7 @@ const { checkDocker } = require('./docker/check');
 const { startDockerDesktop, downloadUrl } = require('./docker/launch');
 const { shutDownDocker } = require('./docker/desktop');
 const { syncVendorVolume } = require('./project/vendor-volume');
+const { previewDockerFiles, generateDockerFiles } = require('./project/docker-files');
 const { runningProjects } = require('./tray');
 const {
   listContainers,
@@ -892,6 +893,22 @@ function registerIpcHandlers() {
 
   // Opens <app data>/versions.json in the user's editor. The file is created with an empty example first.
   handle('registry:openFile', () => openVersionsFile());
+
+  // ---------- Docker files in the project folder (Settings tab) ----------
+  // What "Generate Docker files" would write: the services and the files, nothing is written here.
+  handle('project:dockerFiles', (name) => {
+    const spec = requireSpec(name);
+    if (!isEditable(spec)) throw new Error('This project has no Docker files to generate.');
+    const creds = credentialsFor(spec);
+    return previewDockerFiles(spec, { app: creds.app, root: creds.root });
+  });
+  // Writes them. Only because the button was pressed; a file that is replaced is kept as .bak.
+  handle('project:generateDockerFiles', (name) => {
+    const spec = requireSpec(name);
+    if (!isEditable(spec)) throw new Error('This project has no Docker files to generate.');
+    const creds = credentialsFor(spec);
+    return generateDockerFiles(spec, { app: creds.app, root: creds.root });
+  });
 
   // Only the .env lines, for the Copy .env button. Same values as the Connection panel.
   handle('project:env', (name, target) => envTextFor(requireSpec(name), target));
