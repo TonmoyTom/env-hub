@@ -33,14 +33,23 @@ Done
 - Databases with credentials, data kept in volumes, extra services with data volumes.
 - Projects folder can be chosen. Windows installer (choose install folder, licence, shortcuts, picture).
 - Application menu: File, Tools > Sync (1, 2, 3), Help > Planning.
+- Added 2026-11-16 and 2026-11-17:
+  - Modern UI: sidebar, project cards, detail tabs (Overview, Services, Volumes, Logs, Credentials & .env, Settings), light and dark theme, visual polish.
+  - Laravel speed on Windows: "Keep vendor in a Docker volume" (Settings tab), PHP extensions and php.ini settings, "Project slow on Windows?" tip (now in the Settings tab).
+  - Docker card: "Download Docker" (Docker missing) and "Start Docker" (Docker Desktop closed).
+  - Exit stops Docker Desktop (switch in Settings > Docker, on by default).
+  - Tray menu lists the running projects and their services, with "Open project".
+  - Settings tab > "Docker files": shows the services and files, and "Generate Docker files" writes Dockerfile, docker-compose.yml, .dockerignore and an env file into the project folder.
+  - Network access test (Test access) for "Share on my network".
 
 Next (in this order)
 1. Check everything in the real window (GUI) and fix what the click-through finds. Most parts were checked in code and on real Docker, but not all in the window.
 2. Update: "Check for updates" (needs a GitHub repo and releases, then `electron-updater`).
 3. Code signing for the installer (Windows SmartScreen warns without it).
 4. Mac and Linux builds (dmg, AppImage, deb) with GitHub Actions. Linux file ownership is already handled in code, untested on Linux.
-5. Modern UI redesign (see below).
+5. Modern UI redesign: the main screens are built (see the 2026-11-16 notes). Open: split `renderer/app.js` into modules, toasts, a full keyboard and screen reader check.
 6. More: Docker Compose projects as imports, PHP without Laravel, .NET, a git clone button, backup and restore of database data.
+7. Generate Docker files: a choice of what to include (vendor volume, php.ini, network share), and a .gitignore line for .env.docker.
 
 ## Decision log
 
@@ -50,6 +59,10 @@ Next (in this order)
 - 2026-11-09: Application menu added. Planning (this file) and the handover notes open from Help. Tools > Sync has three parts: (1) export and import the project list as a file, without passwords, (2) refresh the Docker state, (3) refresh the PHP/Node/database version lists from Docker Hub.
 - 2026-11-09: Update checking is planned, but not built: it needs a GitHub repo for releases.
 - 2026-11-10: ProjectDockHub runs in the tray. Closing the window hides it; Exit (tray right click or File menu) quits. Only one copy runs at a time.
+- 2026-11-16: Slow pages on Windows come from reading the shared project folder (about 1 ms per file), not from CPU or memory. Fix: vendor/ in a Docker volume (copied once, refreshed when composer.lock changes; not offered on Linux), plus a Defender exclusion. Composer then runs inside the container.
+- 2026-11-16: Exit also stops Docker Desktop (`docker desktop stop`), because Docker keeps memory when only the app closes. A switch in Settings turns it off. Without Docker Desktop, only the containers of ProjectDockHub projects are stopped.
+- 2026-11-16: The tray menu shows running projects and their services, renewed from container events.
+- 2026-11-17: "Generate Docker files" writes into the user's own folder only when the button is pressed. The project's own .env is never changed (values go to .env.docker) and a replaced file is kept as .bak. The compose file holds no password.
 
 ## Planned: modern UI redesign (not started, do it after the features are stable)
 
