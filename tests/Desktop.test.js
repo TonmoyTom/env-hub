@@ -70,3 +70,25 @@ test('download Docker: the official installer for this computer, the install gui
   assert.match(downloadUrl('darwin', 'x64'), /\/mac\/main\/amd64\/Docker\.dmg$/);
   assert.strictEqual(downloadUrl('linux', 'x64'), 'https://docs.docker.com/engine/install/');
 });
+
+test('one service: stop and start find the container by the project and service labels', async () => {
+  const { serviceAction } = require('../main/docker/containers');
+  const calls = [];
+  const run = async (args) => {
+    calls.push(args);
+    return args[0] === 'ps' ? { ok: true, stdout: 'aaaaaaaaaaaa\n', stderr: '' } : { ok: true, stdout: '', stderr: '' };
+  };
+  assert.deepStrictEqual(await serviceAction('shop', 'mysql', 'stop', run), { ok: true, stdout: '', stderr: '' });
+  assert.ok(calls[0].includes('label=com.envhub.project=shop') && calls[0].includes('label=com.envhub.service=mysql'));
+  assert.deepStrictEqual(calls[1], ['stop', 'aaaaaaaaaaaa']);
+  await serviceAction('shop', 'mysql', 'start', run);
+  assert.deepStrictEqual(calls[3], ['start', 'aaaaaaaaaaaa']);
+
+  const none = await serviceAction('shop', 'redis', 'start', async () => ({ ok: true, stdout: '', stderr: '' }));
+  assert.strictEqual(none.ok, false);
+  assert.match(none.stderr, /does not exist/);
+
+  await assert.rejects(() => serviceAction('shop', 'bad name!', 'stop', run), /Invalid service name/);
+  await assert.rejects(() => serviceAction('shop', 'mysql', 'rm', run), /Invalid action/);
+  await assert.rejects(() => serviceAction('Bad Project', 'mysql', 'stop', run), /Invalid project name/);
+});

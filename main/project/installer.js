@@ -80,7 +80,8 @@ async function installProject(opts, log = () => {}) {
 function restoreLaravel({ folder }, log = () => {}) {
   const args = [
     'run', '--rm', '--mount', `type=bind,source=${folder},target=/app`, '-w', '/app',
-    ...userArgs(hostUser()), '-e', 'COMPOSER_NO_INTERACTION=1', 'composer:2', 'sh', '-c', COMPOSER_RESTORE,
+    ...userArgs(hostUser()), '-e', 'COMPOSER_NO_INTERACTION=1', '-e', 'COMPOSER_NO_SECURITY_BLOCKING=1', '-e', 'COMPOSER_NO_BLOCKING=1',
+    'composer:2', 'sh', '-c', COMPOSER_RESTORE,
   ];
   log('Installing the PHP packages (composer install). The first time this can take a few minutes');
   return streamDocker(args, log, { timeout: INSTALL_TIMEOUT_MS });

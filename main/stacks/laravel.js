@@ -9,6 +9,12 @@ const { iniHash } = require('./php-extensions');
 
 // Node for the Vite dev server of a Laravel project. Fixed, as it was before versions could be chosen.
 const NODE_VERSION = '22';
+// Old Laravel projects (8, 9...) depend on package versions that Composer 2.9 and newer refuse to install because of
+// security advisories ("composer update" stops with "affected by security advisories"). ProjectDockHub runs projects
+// on the developer's own computer, so Composer is told not to block them. The first name is the old one, the second
+// the current one; an older Composer ignores what it does not know.
+const COMPOSER_ENV = { COMPOSER_NO_SECURITY_BLOCKING: '1', COMPOSER_NO_BLOCKING: '1' };
+
 const OPTION_KEYS = ['mysql', 'redis', 'phpmyadmin', 'node', 'mailpit'];
 
 // Projects created before options existed had these services.
@@ -81,7 +87,7 @@ function laravelProject({ name, phpVersion, folder, dbPassword, options, version
       image: `envhub-${name}-php`,
       build: { context: phpContext, dockerfile: 'Dockerfile' },
       // The hash makes Docker recreate the container when php.ini changes, so PHP reads the new file.
-      env: { ENVHUB_PHP_INI: iniHash(phpIni) },
+      env: { ENVHUB_PHP_INI: iniHash(phpIni), ...COMPOSER_ENV },
       volumes: [
         { source: folder, target: webRoot },
         { source: path.join(phpContext, PHP_INI_FILE), target: PHP_INI_TARGET, readOnly: true },
@@ -112,4 +118,4 @@ function laravelProject({ name, phpVersion, folder, dbPassword, options, version
   return { name, stack: 'laravel', phpVersion, services };
 }
 
-module.exports = { laravelProject, normalizeOptions, VITE_COMMAND, phpSupportDir, PHP_INI_FILE };
+module.exports = { COMPOSER_ENV, laravelProject, normalizeOptions, VITE_COMMAND, phpSupportDir, PHP_INI_FILE };

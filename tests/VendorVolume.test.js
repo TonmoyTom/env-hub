@@ -120,3 +120,22 @@ test('vendor volume: a failed copy is reported, with the last lines Docker print
     fs.rmSync(folder, { recursive: true, force: true });
   }
 });
+
+test('composer is not blocked by security advisories in the PHP container (old Laravel projects)', () => {
+  const env = phpOf(laravelProject(base)).env;
+  assert.strictEqual(env.COMPOSER_NO_BLOCKING, '1');
+  assert.strictEqual(env.COMPOSER_NO_SECURITY_BLOCKING, '1');
+  // The container still gets the php.ini hash, and the compose file accepts the variables.
+  assert.ok(env.ENVHUB_PHP_INI);
+  assert.strictEqual(generateCompose(laravelProject(base)).services.php.environment.COMPOSER_NO_BLOCKING, '1');
+});
+
+test('composer hints: the common failures get a plain sentence, an unknown one gets none', () => {
+  const { composerHint } = require('../main/project/composer-hints');
+  assert.match(composerHint(['x', 'but these were not loaded, because they are affected by security advisories']), /known security problems/);
+  assert.match(composerHint('your php version (8.4.27) does not satisfy that requirement.'), /too old for PHP 8\.4\.27/);
+  assert.match(composerHint(['laravel/framework replaces illuminate/support and thus cannot coexist with it.']), /new Laravel version/);
+  assert.match(composerHint('Allowed memory size of 1610612736 bytes exhausted'), /COMPOSER_MEMORY_LIMIT/);
+  assert.strictEqual(composerHint(['something else']), '');
+  assert.strictEqual(composerHint(undefined), '');
+});

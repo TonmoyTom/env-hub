@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { runDocker, streamDocker } = require('../docker/exec');
+const { composerHint } = require('./composer-hints');
 
 // "Fast vendor" for a Laravel project: vendor/ lives in a Docker volume instead of the shared project folder.
 // On Windows and Mac every file of a shared folder is slow to read (about 1 ms each), and a Laravel page touches
@@ -80,7 +81,9 @@ async function syncVendorVolume({ projectName, folder, log = () => {}, run = run
     ], log, { timeout: LONG_TIMEOUT_MS });
   }
   if (!res.ok) {
-    return { ok: false, action, error: `${action === 'copy' ? 'copying vendor' : 'composer install'} failed: ${(res.tail || []).slice(-3).join(' | ') || 'unknown error'}` };
+    const tail = res.tail || [];
+    const hint = composerHint(tail);
+    return { ok: false, action, error: `${action === 'copy' ? 'copying vendor' : 'composer install'} failed: ${tail.slice(-3).join(' | ') || 'unknown error'}${hint ? ` ${hint}` : ''}` };
   }
 
   // Remember which composer.lock the volume belongs to. `$1` keeps the value out of the shell text.

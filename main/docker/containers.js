@@ -143,6 +143,24 @@ async function removeProject(projectName, { keepData = false } = {}) {
   return { ok: true, stdout: '', stderr: '' };
 }
 
+// Starts or stops ONE service of a project (its container), found by the ProjectDockHub labels.
+// `action` is 'start' or 'stop'. A service whose container does not exist (removed) cannot be started
+// here: starting the whole project creates it again.
+async function serviceAction(projectName, serviceName, action, run = runDocker) {
+  assertProjectName(projectName);
+  if (typeof serviceName !== 'string' || !NAME_RE.test(serviceName)) throw new Error('Invalid service name');
+  if (action !== 'start' && action !== 'stop') throw new Error('Invalid action');
+
+  const found = await run(['ps', '-a', '-q', '--filter', MANAGED_FILTER,
+    '--filter', `label=com.envhub.project=${projectName}`, '--filter', `label=com.envhub.service=${serviceName}`]);
+  if (!found.ok) throw new Error(firstLine(found.stderr) || 'Could not find the container');
+  const ids = found.stdout.split(String.fromCharCode(10)).map((id) => id.trim()).filter((id) => ID_RE.test(id));
+  if (ids.length === 0) {
+    return { ok: false, stdout: '', stderr: `The container of ${serviceName} does not exist. Start the whole project to create it.` };
+  }
+  return run([action, ...ids], { timeout: action === 'stop' ? 120000 : 60000 });
+}
+
 async function restartProject(projectName) {
   const ids = await projectContainerIds(projectName, { runningOnly: false });
   if (ids.length === 0) {
@@ -155,6 +173,7 @@ module.exports = {
   listContainers,
   stopProject,
   restartProject,
+  serviceAction,
   removeProject,
   missingServices,
   projectVolumeNames,

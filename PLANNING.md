@@ -10,20 +10,21 @@ Services: MySQL, PostgreSQL, MongoDB, Redis, phpMyAdmin, Adminer, Mailpit, and a
 
 ## Key decisions
 
-| Area | Decision | Why |
-|---|---|---|
-| App framework | Electron (JavaScript) | Team knows JavaScript; Docker libraries exist for Node. Tauri later if RAM becomes a problem. |
-| Runtime | Docker only | One engine means one set of bugs. |
-| Config source of truth | ProjectDockHub app data folder | User never edits compose files by hand. |
-| Network default | Bind to 127.0.0.1 | Safe by default. LAN sharing is opt-in per project. |
-| Admin tools | Not exposed to LAN by default | Database and mail UIs carry more risk. |
-| License | MIT | Simple and common for developer tools. |
+| Area                   | Decision                       | Why                                                                                           |
+| ---------------------- | ------------------------------ | --------------------------------------------------------------------------------------------- |
+| App framework          | Electron (JavaScript)          | Team knows JavaScript; Docker libraries exist for Node. Tauri later if RAM becomes a problem. |
+| Runtime                | Docker only                    | One engine means one set of bugs.                                                             |
+| Config source of truth | ProjectDockHub app data folder | User never edits compose files by hand.                                                       |
+| Network default        | Bind to 127.0.0.1              | Safe by default. LAN sharing is opt-in per project.                                           |
+| Admin tools            | Not exposed to LAN by default  | Database and mail UIs carry more risk.                                                        |
+| License                | MIT                            | Simple and common for developer tools.                                                        |
 
 ## Phases
 
 Status on 2026-11-09. The detail of how each part works is in HANDOVER.md.
 
 Done
+
 - Foundation: Electron app, secure window, allowlisted IPC.
 - Docker check, compose engine, ports (always unique), start/stop/restart/logs, live status.
 - New project wizard: name, setup, create with progress and live logs.
@@ -43,6 +44,7 @@ Done
   - Network access test (Test access) for "Share on my network".
 
 Next (in this order)
+
 1. Check everything in the real window (GUI) and fix what the click-through finds. Most parts were checked in code and on real Docker, but not all in the window.
 2. Update: "Check for updates" (needs a GitHub repo and releases, then `electron-updater`).
 3. Code signing for the installer (Windows SmartScreen warns without it).
@@ -70,6 +72,7 @@ The current UI is plain and works, but it is not modern. The redesign is planned
 Rule for now: new features must keep UI code separate and simple (small functions, no new inline styles), so the redesign is a re-skin and not a rewrite.
 
 Goals:
+
 - A modern, clean look, light and dark theme (follow the system, with a switch).
 - A sidebar (Projects, New project, Settings) instead of one long page, and a project card grid with status, stack icon, port and one-click Open.
 - A project detail page with tabs: Overview, Services, Logs, Credentials & .env, Settings. The row full of buttons goes away.
@@ -78,6 +81,7 @@ Goals:
 - Keyboard and screen reader support (focus, labels, contrast), responsive for small windows.
 
 How (suggested order):
+
 1. Design first: pick a design system (plain CSS variables and a small component set, no framework, to keep "no bundler"). Sketch the screens (Projects, New project, Project detail, Settings) and get the user's approval.
 2. Move the CSS to tokens (colors, spacing, radius, font) in `renderer/styles.css`, then rebuild the components (button, card, badge, tabs, toast, modal).
 3. Split `renderer/app.js` (about 1800 lines) into modules under `renderer/views/` (one per screen) before changing the layout, because the current single file makes a redesign risky.

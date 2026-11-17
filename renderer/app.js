@@ -367,6 +367,7 @@ function dockerIsDown(text) {
 
 async function runStart(name, view, options) {
   progressViews.set(name, view);
+  forgetProject(name);
 
   let res;
   try {
@@ -387,6 +388,8 @@ async function runStart(name, view, options) {
   } else {
     view.finish(true, `${name} is ready`, portMoves(res));
   }
+  // New or changed services are up now: read the project again and set the cache.
+  refreshProjectCache(name, 1200);
   return res;
 }
 
@@ -513,8 +516,30 @@ function describeResult(label, name, res) {
 }
 
 // `texts` can replace the standard words: { busy, done }.
+// The stop / start icon of one service.
+async function toggleService(projectName, serviceName, running, button) {
+  button.disabled = true;
+  const verb = running ? 'Stop' : 'Start';
+  setActionStatus(`${verb} ${serviceName}...`, projectName, 'busy');
+  try {
+    const res = await window.envhub[running ? 'stopService' : 'startService'](projectName, serviceName);
+    if (res && res.ok === false) {
+      setActionStatus(`${verb} ${serviceName} failed: ${String(res.stderr || '').trim().split(String.fromCharCode(10))[0] || 'unknown error'}`, projectName, 'error');
+    } else {
+      setActionStatus(`${serviceName} ${running ? 'stopped' : 'started'}.`, projectName);
+    }
+  } catch (err) {
+    setActionStatus(`${verb} ${serviceName} failed: ${ipcMessage(err)}`, projectName, 'error');
+  }
+  await loadProjects();
+  scheduleRefreshContainers();
+  refreshProjectCache(projectName, 300);
+  button.disabled = false;
+}
+
 async function runProjectAction(label, method, name, texts = {}) {
   setActionStatus(texts.busy || `${label} ${name}...`, name, 'busy');
+  if (method !== 'openFolder' && method !== 'openProject') forgetProject(name);
   try {
     const res = await window.envhub[method](name);
     const failed = res && res.ok === false;
@@ -524,6 +549,7 @@ async function runProjectAction(label, method, name, texts = {}) {
   }
   await loadProjects();
   scheduleRefreshContainers();
+  if (method !== 'openFolder' && method !== 'openProject') refreshProjectCache(name, 1200);
 }
 
 // The Starting card closes by itself a moment after a good start, and the project that came up lights up in
@@ -564,6 +590,9 @@ async function openService(name, service, label, say = (text) => setActionStatus
 }
 
 async function deleteProject(name, keepData = false) {
+  forgetProject(name);
+  clearTimeout(cacheTimers.get(name));
+  cacheTimers.delete(name);
   setActionStatus(`Deleting ${name}...`);
   try {
     const res = await window.envhub.deleteProject(name, { keepData });
@@ -737,6 +766,7 @@ async function showLogs(name) {
 // Fixed SVG markup from this file only (never text from a project), so innerHTML is safe here.
 const ICONS = {
   play: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.9l12-7.5a1 1 0 0 0 0-1.8l-12-7.5A1 1 0 0 0 7 4.5z"></path></svg>',
+  stop: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>',
   external: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"></path><path d="M20 4 10 14"></path><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"></path></svg>',
   copy: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V6a2 2 0 0 1 2-2h9"></path></svg>',
   check: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"></path></svg>',
@@ -1690,11 +1720,16 @@ function isRunningProject(project) {
 function openDetail(name) {
   detailState.name = name;
   overviewState.name = '';
+  // Seen before: show it at once, the new numbers replace it a moment later.
+  const cached = overviewCache.get(name);
+  if (cached) Object.assign(overviewState, cached, { name });
   showLanAddress('');
   showView('detail');
   renderDetail();
   setDetailTab('overview');
-  renderOverviewLoading();
+  const project = projectsView.list.find((p) => p.name === name);
+  if (cached && project) renderOverview(project);
+  else renderOverviewLoading();
   loadOverviewData(name);
   window.scrollTo({ top: 0 });
 }
@@ -1738,6 +1773,52 @@ function renderDetail() {
 // ---------- Details: overview data ----------
 
 const overviewState = { name: '', links: null, containers: [], logs: '', details: null, stats: null, disk: null, diskAt: 0 };
+// What was last read for each project (services, containers, logs, settings form, numbers).
+// Opening a project shows this at once while the new numbers load. It is replaced after every read, and dropped
+// when the project changes: settings saved, a service started or stopped, a container started or stopped, deleted.
+const overviewCache = new Map();
+const OVERVIEW_CACHE_MAX = 30;
+
+function rememberOverview() {
+  const { name } = overviewState;
+  if (!name) return;
+  overviewCache.delete(name);
+  overviewCache.set(name, { ...overviewState });
+  // The oldest projects fall out when many are open one after another.
+  while (overviewCache.size > OVERVIEW_CACHE_MAX) overviewCache.delete(overviewCache.keys().next().value);
+}
+
+// Forget what was cached for one project (the page that is open keeps showing it until the new read arrives).
+function forgetProject(name) {
+  overviewCache.delete(name);
+}
+
+// The project changed (a service was added, settings saved, something started or stopped):
+// drop the old copy, wait a moment for Docker to settle, read everything again and set the cache from that.
+// The open project is read by the page itself. A project that is not open is read in the background,
+// so its details are ready (and right) the next time it is opened.
+const cacheTimers = new Map();
+
+function refreshProjectCache(name, delay = 800) {
+  forgetProject(name);
+  clearTimeout(cacheTimers.get(name));
+  cacheTimers.set(name, setTimeout(async () => {
+    cacheTimers.delete(name);
+    if (!projectsView.list.some((p) => p.name === name)) return;
+    if (detailState.name === name && document.body.dataset.view === 'detail') {
+      loadOverviewData(name);
+      return;
+    }
+    try {
+      const snapshot = await readOverview(name, overviewCache.get(name));
+      // A newer change came in while this was reading: that one sets the cache.
+      if (!cacheTimers.has(name)) overviewCache.set(name, snapshot);
+    } catch (err) {
+      // Docker is off or the project is gone. It is read when the page is opened.
+    }
+  }, delay));
+}
+
 const OVERVIEW_REFRESH_MS = 5000;
 const DISK_REFRESH_MS = 60000;
 let overviewTimer = null;
@@ -1755,31 +1836,38 @@ function stopOverviewRefresh() {
 
 // Reads what the overview shows. Each call may fail on its own (for example, Docker is off),
 // so every value falls back to nothing instead of stopping the page.
-async function loadOverviewData(name) {
-  if (!name) return;
-  stopOverviewRefresh();
-  const first = overviewState.name !== name;
-  const diskDue = first || Date.now() - overviewState.diskAt > DISK_REFRESH_MS;
+// `before` is what was known about the project (the disk size is read only once a minute).
+async function readOverview(name, before) {
+  const known = before && before.name === name ? before : null;
+  const diskDue = !known || Date.now() - known.diskAt > DISK_REFRESH_MS;
   const results = await Promise.allSettled([
     window.envhub.projectLinks(name),
     window.envhub.listContainers(name),
     window.envhub.projectLogs(name),
     window.envhub.projectDetails(name),
     window.envhub.projectStats(name),
-    diskDue ? window.envhub.projectDisk(name) : Promise.resolve(overviewState.disk),
+    diskDue ? window.envhub.projectDisk(name) : Promise.resolve(known.disk),
   ]);
-  if (detailState.name !== name || document.body.dataset.view !== 'detail') return;
   const value = (r) => (r.status === 'fulfilled' ? r.value : null);
-  overviewState.name = name;
-  overviewState.links = value(results[0]);
-  overviewState.containers = value(results[1]) || [];
-  overviewState.logs = value(results[2]) || '';
-  overviewState.details = value(results[3]);
-  overviewState.stats = value(results[4]);
-  if (diskDue) {
-    overviewState.disk = value(results[5]);
-    overviewState.diskAt = Date.now();
-  }
+  return {
+    name,
+    links: value(results[0]),
+    containers: value(results[1]) || [],
+    logs: value(results[2]) || '',
+    details: value(results[3]),
+    stats: value(results[4]),
+    disk: diskDue ? value(results[5]) : known.disk,
+    diskAt: diskDue ? Date.now() : known.diskAt,
+  };
+}
+
+async function loadOverviewData(name) {
+  if (!name) return;
+  stopOverviewRefresh();
+  const snapshot = await readOverview(name, overviewState);
+  if (detailState.name !== name || document.body.dataset.view !== 'detail') return;
+  Object.assign(overviewState, snapshot);
+  rememberOverview();
   const project = projectsView.list.find((p) => p.name === name);
   if (project) renderOverview(project);
   // Keep the CPU and memory numbers moving while the page is open.
@@ -1790,7 +1878,8 @@ async function loadOverviewData(name) {
 async function openTerminal(service) {
   try {
     await window.envhub.projectShell(detailState.name, service);
-    setActionStatus(`Opened a terminal for ${service}.`, detailState.name);
+    const hint = service === 'php' ? ' Composer gives an error? Open the Settings tab and click "Composer problems? Click here for help".' : '';
+    setActionStatus(`Opened a terminal for ${service}.${hint}`, detailState.name);
   } catch (err) {
     setActionStatus(`Could not open a terminal: ${ipcMessage(err)}`, detailState.name, 'error');
   }
@@ -2013,6 +2102,10 @@ function renderOverview(project) {
       const pill = makeElement('span', `status status-${up ? 'running' : 'stopped'}`);
       pill.textContent = up ? '● Running' : '● Stopped';
       const actions = makeElement('div', 'svc-actions');
+      // Stop or start this one service. The list updates by itself when Docker reports the change.
+      const power = iconButton(up ? 'stop' : 'play', up ? `Stop ${item.name}` : `Start ${item.name}`, () => toggleService(project.name, item.name, up, power));
+      power.classList.add(up ? 'svc-stop' : 'svc-start');
+      actions.appendChild(power);
       if (port) {
         addButton(actions, 'Open', () => openDetailPort(project.name, item.name, port.container));
       }
@@ -2037,6 +2130,17 @@ function renderOverview(project) {
   addButton(more, 'Open full logs', () => setDetailTab('logs'));
   logs.card.appendChild(more);
   main.appendChild(logs.card);
+
+  // Laravel: a short card that leads to the Composer help of the Settings tab.
+  if (project.stack === 'laravel' && project.editable) {
+    const help = ovCard('Composer or package problems?');
+    const note = makeElement('p', 'pcard-note');
+    note.textContent = 'Errors from composer (security advisories, php version, upgrading Laravel)? The steps to fix them are in the Settings tab.';
+    const row = makeElement('div', 'row-actions');
+    addButton(row, 'Open Composer help', openComposerHelp);
+    help.card.append(note, row);
+    main.appendChild(help.card);
+  }
 
 
   // Database
@@ -3288,6 +3392,91 @@ function setEditBusy(busy) {
   el.editAddService.disabled = busy;
 }
 
+// ---------- Composer help (Settings tab, Laravel) ----------
+
+// The common Composer problems in plain words, with the commands to copy. Built from text only (CSP safe).
+const COMPOSER_HELP = [
+  {
+    title: 'Error: "affected by security advisories"',
+    text: 'Old Laravel versions (7, 8...) have known security problems, so a new Composer refuses to install them. ProjectDockHub already turns this block off inside its containers. If you still see it, click Save and apply (or Restart) so the container gets the new setting, then run the command again. Old versions are fine on your own computer, but upgrade Laravel before the site goes online.',
+  },
+  {
+    title: 'Error: "your php version does not satisfy that requirement"',
+    text: 'A package is too old for the PHP of this project. Laravel 7 and 8 packages need an old PHP, newer Laravel needs PHP 8.2 or newer. The fix is to update that package, or Laravel itself (see the next point). The PHP version of an existing project cannot be changed in Settings yet.',
+  },
+  {
+    title: 'Upgrading Laravel (for example 8 to 9)',
+    text: 'Go one version at a time (8 to 9, then 10, 11, 12). First change composer.json, then update. Laravel 9 does not work with facade/ignition and fruitcake/laravel-cors, and needs newer versions of collision and Sanctum. Open the terminal of the php service and run:',
+    commands: [
+      'composer remove fruitcake/laravel-cors facade/ignition --no-update',
+      'composer require --dev spatie/laravel-ignition:^1.0 nunomaduro/collision:^6.1 --no-update',
+      'composer require laravel/sanctum:^3.0 --no-update',
+      'composer update --with-all-dependencies',
+    ],
+    after: 'Then read the official upgrade guide of that version (laravel.com/docs/upgrade): some code has to change too, for example the CORS and TrustProxies middleware. Back up the project with git first, and run "php artisan config:clear" at the end.',
+  },
+  {
+    title: '"Deprecated: ..." lines in the output',
+    text: 'These are warnings from an old package running on a newer PHP. They do not stop anything and can be ignored.',
+  },
+  {
+    title: 'Error: "Allowed memory size exhausted"',
+    text: 'Composer ran out of memory. Run it again like this:',
+    commands: ['COMPOSER_MEMORY_LIMIT=-1 composer update'],
+  },
+];
+
+// "Open Composer help" (Overview): goes to the Settings tab, opens the help box and scrolls to it.
+let composerHelpWanted = false;
+
+function showComposerHelpIfWanted() {
+  if (!composerHelpWanted) return;
+  const box = el.editComposerHelp.querySelector('details');
+  if (!box) return;
+  composerHelpWanted = false;
+  box.open = true;
+  box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function openComposerHelp() {
+  composerHelpWanted = true;
+  setDetailTab('settings');
+  // The form can already be on the page (opened before); otherwise it shows the help when it is built.
+  showComposerHelpIfWanted();
+}
+
+function composerHelpCard() {
+  const details = makeElement('details', 'cred-section cred-tip');
+  const summary = makeElement('summary', '');
+  summary.textContent = 'Composer problems? Click here for help';
+  details.appendChild(summary);
+
+  const intro = makeElement('p', 'muted small');
+  intro.textContent = 'Composer installs the PHP packages of a Laravel project. Run it in the terminal of the php service (project page, Services, Terminal), not on your own computer: it uses the PHP of this project.';
+  details.appendChild(intro);
+
+  for (const item of COMPOSER_HELP) {
+    const heading = makeElement('h4', '');
+    heading.textContent = item.title;
+    const text = makeElement('p', 'muted small');
+    text.textContent = item.text;
+    details.append(heading, text);
+    if (item.commands) {
+      const code = makeElement('pre', 'code-block');
+      code.textContent = item.commands.join('\n');
+      const row = makeElement('div', 'row-actions');
+      const copy = addButton(row, 'Copy commands', () => copyWithFeedback(item.commands.join('\n'), copy));
+      details.append(code, row);
+    }
+    if (item.after) {
+      const after = makeElement('p', 'muted small');
+      after.textContent = item.after;
+      details.appendChild(after);
+    }
+  }
+  return details;
+}
+
 // ---------- Docker files (Settings tab) ----------
 
 const DF_STATUS = {
@@ -3410,6 +3599,10 @@ function renderEdit(details) {
   el.editKeepPackagesText.textContent = details.packagesLabel || '';
   el.editKeepPackages.checked = details.keepPackages === true;
   loadDockerFiles(details.name);
+  // Composer help: only Laravel projects have composer.
+  el.editComposerHelp.textContent = '';
+  if (details.php) el.editComposerHelp.appendChild(composerHelpCard());
+  showComposerHelpIfWanted();
   // Slow on Windows: the fix is part of the Settings tab, under the vendor switch.
   el.editSlowTip.textContent = '';
   if (isWindowsBrowser() && details.folder) el.editSlowTip.appendChild(slowOnWindowsTip(details.folder));
@@ -3470,10 +3663,21 @@ async function openEdit(name) {
   el.editMessage.textContent = 'Loading...';
   el.editCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
+  // The form of the last read shows at once; the fresh one replaces it when it arrives.
+  const known = overviewCache.get(name);
+  if (known && known.details) {
+    renderEdit(known.details);
+    el.editMessage.textContent = '';
+  }
+
   try {
-    renderEdit(await window.envhub.projectDetails(name));
+    const details = await window.envhub.projectDetails(name);
+    if (known && editState.name && editState.name !== name) return;
+    renderEdit(details);
+    if (overviewCache.has(name)) overviewCache.set(name, { ...overviewCache.get(name), details });
     el.editMessage.textContent = '';
   } catch (err) {
+    if (known && known.details) return;
     el.editMessage.textContent = `Could not load the project: ${ipcMessage(err)}`;
   }
 }
@@ -3565,6 +3769,9 @@ async function saveEdit(applyNow, rebuild = false) {
     }
 
     renderEdit(res.details);
+    // The saved settings are the new truth for the form. The services are read again below.
+    overviewCache.delete(name);
+    refreshProjectCache(name, 300);
     el.editMessage.textContent = savedText(res, applyNow);
     // Tell the user that the image still has to be rebuilt. The message stays until it is closed.
     if (!applyNow && res.details.php && res.details.php.rebuildNeeded) {
@@ -3777,6 +3984,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   el.editPython = byId('edit-python');
   el.editVendorRow = byId('edit-vendor-row');
   el.editSlowTip = byId('edit-slow-tip');
+  el.editComposerHelp = byId('edit-composer-help');
   el.editVendorVolume = byId('edit-vendor-volume');
   el.editKeepPackages = byId('edit-keep-packages');
   el.existingFields = byId('existing-fields');
@@ -3937,7 +4145,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   el.copyEnvHost.addEventListener('click', () => copyEnvFile(el.copyEnvHost, 'host', 'Copy .env (my computer)'));
   byId('refresh-containers').addEventListener('click', refreshContainers);
 
-  window.envhub.onContainersChanged(() => {
+  window.envhub.onContainersChanged((change) => {
+    // What was cached for that project is old now. The open project is read again by the refresh below.
+    if (change && change.project && change.project !== detailState.name && overviewCache.has(change.project)) refreshProjectCache(change.project, 1500);
     scheduleRefreshContainers();
     scheduleLinksRefresh();
     // Keeps the On / Stopped badge right when a container starts or stops outside ProjectDockHub too.

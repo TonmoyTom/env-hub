@@ -4242,3 +4242,27 @@ button.stack-card.on {
 .df-actions {
   justify-content: flex-start;
 }
+
+/* Stop and start icon of one service */
+.icon-btn.svc-stop:hover {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+.icon-btn.svc-start {
+  color: var(--ok);
+}
+
+.icon-btn.svc-start:hover {
+  background: var(--ok-bg);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+}
+
+.icon-btn:disabled {
+  opacity: 0.5;
+}
+
+#edit-composer-help:empty {
+  display: none;
+}

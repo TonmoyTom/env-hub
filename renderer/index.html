@@ -1084,9 +1084,12 @@
                 <h3>PHP</h3>
                 <p class="muted small">
                   Already included: pdo_mysql, mbstring, zip, bcmath, intl.
-                  Tick more extensions (for example GD for images). The PHP
-                  image is rebuilt when you click Save and apply, which can
-                  take a few minutes.
+                  Tick more extensions (for example GD for images), then click
+                  Save and apply. The PHP image is rebuilt with them, which can
+                  take a few minutes. "Rebuild PHP container" is only needed
+                  when an extension still does not work after that (it builds
+                  everything again from nothing). To check, run
+                  <code>php -m</code> in the php terminal.
                 </p>
               </div>
               <p id="edit-php-note" class="cred-warning small" role="alert" hidden>
@@ -1170,6 +1173,8 @@
               </div>
               <p id="df-message" class="muted small" aria-live="polite"></p>
             </div>
+
+            <div id="edit-composer-help" class="form-section"></div>
 
             <div id="edit-slow-tip" class="form-section"></div>
 

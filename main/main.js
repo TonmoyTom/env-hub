@@ -14,12 +14,14 @@ const { checkDocker } = require('./docker/check');
 const { startDockerDesktop, downloadUrl } = require('./docker/launch');
 const { shutDownDocker } = require('./docker/desktop');
 const { syncVendorVolume } = require('./project/vendor-volume');
+const { composerHint } = require('./project/composer-hints');
 const { previewDockerFiles, generateDockerFiles } = require('./project/docker-files');
 const { runningProjects } = require('./tray');
 const {
   listContainers,
   stopProject,
   restartProject,
+  serviceAction,
   removeProject,
   missingServices,
   projectLogs,
@@ -493,7 +495,8 @@ function registerIpcHandlers() {
         const res = await restoreLaravel({ folder }, log);
         log.flush();
         if (!res.ok || !fs.existsSync(path.join(folder, 'vendor', 'autoload.php'))) {
-          throw new Error(`composer install failed: ${(res.tail || []).slice(-4).join(' | ') || 'unknown error'}`);
+          const tail = res.tail || [];
+          throw new Error(`composer install failed: ${tail.slice(-4).join(' | ') || 'unknown error'}${composerHint(tail) ? ` ${composerHint(tail)}` : ''}`);
         }
       }
     } else if (stack === 'docker') {
@@ -668,6 +671,10 @@ function registerIpcHandlers() {
   });
 
   handle('project:restart', (name) => restartProject(requireSpec(name).name));
+
+  // One service of a project: its stop and start icons in the Services list.
+  handle('service:stop', (name, service) => serviceAction(requireSpec(name).name, service, 'stop'));
+  handle('service:start', (name, service) => serviceAction(requireSpec(name).name, service, 'start'));
 
   handle('project:delete', async (name, options) => {
     const spec = requireSpec(name);
