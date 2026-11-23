@@ -4130,6 +4130,35 @@ button.stack-card.on {
 
 /* ---------- Narrow windows ---------- */
 
+/* The old layout turned the sidebar into icons below 1000px. Keep the labels down to 860px
+   (with Windows display scaling a normal window is often under 1000px). */
+@media (max-width: 1000px) and (min-width: 861px) {
+  .sidebar {
+    flex: 0 0 200px;
+    width: 200px;
+    align-items: stretch;
+    padding: 12px 10px;
+  }
+
+  .sidebar .nav-item {
+    width: 100%;
+    justify-content: flex-start;
+    padding: 0 12px;
+  }
+
+  .sidebar .nav-item > span:not(.nav-count) {
+    display: inline;
+  }
+
+  .sidebar .nav-count {
+    position: static;
+  }
+
+  .sidebar-foot {
+    display: flex;
+  }
+}
+
 @media (max-width: 1100px) {
   .ov4 {
     grid-template-columns: repeat(2, minmax(0, 1fr));

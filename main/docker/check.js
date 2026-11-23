@@ -4,6 +4,7 @@ const { runDocker } = require('./exec');
 
 // "27.4.0", "28.0.1-rc.1"... and nothing else (an empty answer or a message is not a version).
 const SERVER_VERSION = /^[0-9][0-9A-Za-z.+_-]*$/;
+const CHECK_TIMEOUT_MS = 6000;
 const CONNECT_ERROR = /error during connect|cannot connect to the docker daemon|is the docker daemon running|failed to connect to the docker api|dockerDesktopLinuxEngine/i;
 
 // Returns a plain object the renderer can display.
@@ -11,7 +12,9 @@ const CONNECT_ERROR = /error during connect|cannot connect to the docker daemon|
 async function checkDocker() {
   const platform = process.platform;
 
-  const client = await runDocker(['--version']);
+  // Short time limits: while Docker Desktop is closing or starting, the docker command can hang. Then the
+  // window says "not running" after a few seconds instead of showing "Checking..." for a long time.
+  const client = await runDocker(['--version'], { timeout: CHECK_TIMEOUT_MS });
   if (!client.ok) {
     return {
       installed: false,
@@ -23,7 +26,7 @@ async function checkDocker() {
     };
   }
 
-  const server = await runDocker(['info', '--format', '{{.ServerVersion}}']);
+  const server = await runDocker(['info', '--format', '{{.ServerVersion}}'], { timeout: CHECK_TIMEOUT_MS });
   // `docker info` can exit with 0 even when the engine is off (Docker Desktop closed): it then prints an error
   // and no version. So "running" needs a real version number, and no connection error.
   const serverVersion = server.stdout.trim();
