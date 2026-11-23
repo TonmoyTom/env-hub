@@ -44,11 +44,25 @@
       </label>
       <div class="tb-right">
         <span class="tb-docker" id="tb-docker"><span class="dot" id="tb-docker-dot" data-state="checking"></span><span id="tb-docker-text">Docker</span></span>
+        <div class="bell-wrap">
+          <button type="button" class="tb-icon" id="tb-bell" aria-label="Notifications" title="Notifications" aria-haspopup="true" aria-expanded="false" aria-controls="bell-panel">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+            <span class="bell-badge" id="bell-badge" hidden>0</span>
+          </button>
+        </div>
         <button type="button" class="tb-icon" id="tb-settings" aria-label="Settings" title="Settings">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg>
         </button>
       </div>
     </header>
+    <div class="bell-panel" id="bell-panel" role="dialog" aria-label="Notifications" hidden>
+            <div class="bell-head">
+              <strong>Notifications</strong>
+              <button type="button" class="link-quiet" id="bell-read-all">Mark all as read</button>
+            </div>
+            <ul class="notif-list" id="bell-list"></ul>
+            <button type="button" class="bell-all" id="bell-see-all">See all</button>
+          </div>
     <div class="app">
       <aside class="sidebar" aria-label="Main">
         <button type="button" class="nav-item" id="nav-projects" data-view="projects" aria-current="page">
@@ -676,6 +690,37 @@
                   Rebuild PHP container
                 </button>
               </div>
+            </div>
+          </section>
+
+          <section class="card bare view-notifications" id="notifications-card">
+            <div class="page-head">
+              <div>
+                <span class="eyebrow">system / notifications</span>
+                <h1>Notifications</h1>
+                <p>What happened with your projects and Docker: starts, stops, errors and container events.</p>
+              </div>
+              <div class="row-actions">
+                <button type="button" id="notif-read-all">Mark all as read</button>
+                <button type="button" id="notif-clear">Clear all</button>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-toolbar">
+                <label class="field-search">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+                  <span class="sr-only">Search notifications</span>
+                  <input id="notif-search" type="search" placeholder="Search" autocomplete="off" />
+                </label>
+                <div class="seg" role="group" aria-label="Show">
+                  <button type="button" data-notif-filter="all" aria-pressed="true">All</button>
+                  <button type="button" data-notif-filter="unread" aria-pressed="false">Unread</button>
+                  <button type="button" data-notif-filter="error" aria-pressed="false">Errors</button>
+                  <button type="button" data-notif-filter="docker" aria-pressed="false">Docker events</button>
+                </div>
+              </div>
+              <ul class="notif-list full" id="notif-list"></ul>
+              <div class="panel-foot" id="notif-foot"></div>
             </div>
           </section>
 

@@ -483,20 +483,8 @@ function paintNotes(name) {
     paintNote(el.actionStatus, '');
     return;
   }
-  for (const card of document.querySelectorAll('.pcard')) {
-    if (card.dataset.project !== name) continue;
-    let box = card.querySelector('.note-box');
-    if (!notes.has(name)) {
-      if (box) box.remove();
-      continue;
-    }
-    if (!box) {
-      box = makeElement('div', 'note-box');
-      box.setAttribute('role', 'status');
-      card.insertBefore(box, card.querySelector('.pcard-foot'));
-    }
-    paintNote(box, name);
-  }
+  // The message of a project is a row under it in the Projects table: drawing the table again adds or removes it.
+  if (projectsView.list.some((p) => p.name === name)) renderProjects();
   if (detailState.name === name) paintNote(byId('detail-note'), name);
 }
 
@@ -515,6 +503,7 @@ function showNote(name, text, kind = noteKind(text)) {
   } else {
     notes.set(name, { text, kind });
     if (kind !== 'error' && kind !== 'busy' && kind !== 'warn') noteTimers.set(name, setTimeout(() => clearNote(name), NOTE_MS));
+    if (kind !== 'busy') addNotification({ project: name, text, kind: ['ok', 'error', 'warn'].includes(kind) ? kind : 'info' });
   }
   paintNotes(name);
 }
@@ -4173,8 +4162,17 @@ function paintSettingsBar() {
   const dirty = settingsDirty();
   byId('settings-apply').disabled = !dirty;
   byId('settings-cancel').disabled = !dirty;
-  setText('settings-pending', dirty ? 'Changes not applied yet' : '');
+  const pending = byId('settings-pending');
+  if (dirty) {
+    clearTimeout(settingsDoneTimer);
+    pending.classList.remove('done');
+    pending.textContent = 'Changes not applied yet';
+  } else if (!pending.classList.contains('done')) {
+    pending.textContent = '';
+  }
 }
+
+let settingsDoneTimer = null;
 
 async function applySettings() {
   const theme = pendingTheme();
@@ -4199,6 +4197,15 @@ async function applySettings() {
     }
   }
   paintSettingsBar();
+  // A short "Applied" so it is clear the choice was saved.
+  const pending = byId('settings-pending');
+  pending.textContent = 'Applied ✓';
+  pending.classList.add('done');
+  clearTimeout(settingsDoneTimer);
+  settingsDoneTimer = setTimeout(() => {
+    pending.classList.remove('done');
+    if (!settingsDirty()) pending.textContent = '';
+  }, 2500);
 }
 
 function cancelSettings() {
@@ -5107,6 +5114,309 @@ async function openLinks(name) {
   if (el.linksMessage.textContent === 'Loading...') el.linksMessage.textContent = '';
 }
 
+// ---------- Notifications: the bell in the top bar and the Notifications page ----------
+
+// Every action message (started, stopped, errors) and the container events Docker reports, newest first.
+// Kept in localStorage, so they are still there after a restart. Busy messages ("Starting...") are not kept.
+const NOTIF_MAX = 200;
+const NOTIF_GROUP_MS = 5000;
+const notifView = { items: [], filter: 'all', query: '', loaded: false };
+const notifKey = () => `${NAME_PREFIX}.notifications`;
+
+function loadNotifications() {
+  if (notifView.loaded) return;
+  notifView.loaded = true;
+  try {
+    const saved = JSON.parse(localStorage.getItem(notifKey()) || '[]');
+    if (Array.isArray(saved)) {
+      notifView.items = saved.filter((n) => n && typeof n.text === 'string' && typeof n.at === 'number').slice(0, NOTIF_MAX);
+    }
+  } catch (err) {
+    notifView.items = [];
+  }
+}
+
+function saveNotifications() {
+  try {
+    localStorage.setItem(notifKey(), JSON.stringify(notifView.items.slice(0, NOTIF_MAX)));
+  } catch (err) {
+    // Storage full or blocked: they stay for this session.
+  }
+}
+
+function addNotification({ project = '', text, kind = 'info', source = 'app' }) {
+  if (!text) return;
+  loadNotifications();
+  const now = Date.now();
+  const last = notifView.items[0];
+  // The same message twice in a row (a retry, a second click) is one notification.
+  if (last && last.text === text && last.project === project && now - last.at < 3000) return;
+  notifView.items.unshift({ id: `${now}-${Math.random().toString(36).slice(2, 7)}`, at: now, project, text, kind, source, read: false });
+  if (notifView.items.length > NOTIF_MAX) notifView.items.length = NOTIF_MAX;
+  saveNotifications();
+  paintNotifications();
+}
+
+// Docker events: "start" of nginx, php and mysql a moment apart is one line "nginx, php, mysql started".
+// A container that stops is reported by Docker as kill, die and stop; only "stop" is kept, and "die" alone
+// (a container that exited by itself, for example after an error) becomes a warning.
+const DOCKER_EVENT_WORDS = { start: 'started', stop: 'stopped', restart: 'restarted', destroy: 'removed', die: 'exited' };
+const pendingDies = new Map();
+
+function notifyDockerEvent(change) {
+  if (!change || !change.project) return;
+  const action = change.action;
+  const who = change.service || change.name || 'container';
+  if (action === 'die') {
+    const key = change.name || who;
+    clearTimeout(pendingDies.get(key));
+    pendingDies.set(key, setTimeout(() => {
+      pendingDies.delete(key);
+      groupDockerEvent(change.project, who, 'die');
+    }, 2500));
+    return;
+  }
+  if (action === 'stop' || action === 'destroy') {
+    const key = change.name || who;
+    clearTimeout(pendingDies.get(key));
+    pendingDies.delete(key);
+  }
+  if (!DOCKER_EVENT_WORDS[action]) return;
+  groupDockerEvent(change.project, who, action);
+}
+
+function groupDockerEvent(project, who, action) {
+  loadNotifications();
+  const now = Date.now();
+  const kind = action === 'die' ? 'warn' : 'info';
+  const recent = notifView.items.find((n) => n.source === 'docker' && n.project === project && n.action === action && now - n.at < NOTIF_GROUP_MS);
+  if (recent) {
+    if (!recent.services.includes(who)) recent.services.push(who);
+    recent.text = `${recent.services.join(', ')} ${DOCKER_EVENT_WORDS[action]}`;
+    recent.at = now;
+    recent.read = false;
+    // Keep it at the top.
+    notifView.items = [recent, ...notifView.items.filter((n) => n !== recent)];
+  } else {
+    notifView.items.unshift({
+      id: `${now}-${Math.random().toString(36).slice(2, 7)}`,
+      at: now,
+      project,
+      text: `${who} ${DOCKER_EVENT_WORDS[action]}`,
+      kind,
+      source: 'docker',
+      action,
+      services: [who],
+      read: false,
+    });
+    if (notifView.items.length > NOTIF_MAX) notifView.items.length = NOTIF_MAX;
+  }
+  saveNotifications();
+  paintNotifications();
+}
+
+function unreadCount() {
+  return notifView.items.filter((n) => !n.read).length;
+}
+
+function markAllRead() {
+  let changed = false;
+  for (const n of notifView.items) {
+    if (!n.read) {
+      n.read = true;
+      changed = true;
+    }
+  }
+  if (changed) {
+    saveNotifications();
+    paintNotifications();
+  }
+}
+
+function notifTimeText(at) {
+  const minutes = (Date.now() - at) / 60000;
+  return agoText(minutes, true);
+}
+
+const NOTIF_ICONS = {
+  ok: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"></path></svg>',
+  error: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 7v6M12 17h.01"></path></svg>',
+  warn: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 7v6M12 17h.01"></path></svg>',
+  info: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"></path><path d="M3 8l9 5 9-5M12 13v8"></path></svg>',
+};
+
+// One notification line. Fixed SVG markup from this file only, so innerHTML is safe here.
+function notifRow(n, { full = false } = {}) {
+  const li = makeElement('li', `notif ${n.read ? '' : 'unread'}`.trim());
+  li.dataset.kind = n.kind;
+  const mark = makeElement('span', 'notif-mark');
+  mark.innerHTML = NOTIF_ICONS[n.kind] || NOTIF_ICONS.info;
+  const body = makeElement('div', 'notif-body');
+  const text = makeElement('span', 'notif-text');
+  text.textContent = n.text;
+  const meta = makeElement('span', 'notif-meta');
+  if (n.project) {
+    const link = makeElement('button', 'notif-project');
+    link.type = 'button';
+    link.textContent = n.project;
+    link.title = `Open ${n.project}`;
+    link.addEventListener('click', (event) => {
+      event.stopPropagation();
+      closeBellPanel();
+      if (projectsView.list.some((p) => p.name === n.project)) openDetail(n.project);
+    });
+    meta.appendChild(link);
+  }
+  const source = makeElement('span', '');
+  source.textContent = n.source === 'docker' ? 'Docker' : 'ProjectDockHub';
+  const time = makeElement('time', '');
+  time.textContent = notifTimeText(n.at);
+  time.title = new Date(n.at).toLocaleString();
+  meta.append(source, time);
+  body.append(text, meta);
+  li.append(mark, body);
+  if (full) {
+    const remove = rowIconButton(ROW_ICONS.trash, 'Remove this notification', () => {
+      notifView.items = notifView.items.filter((x) => x.id !== n.id);
+      saveNotifications();
+      paintNotifications();
+    }, 'sm danger-hover');
+    li.appendChild(remove);
+  }
+  li.addEventListener('click', () => {
+    if (!n.read) {
+      n.read = true;
+      saveNotifications();
+      paintNotifications();
+    }
+  });
+  return li;
+}
+
+function dayLabel(at) {
+  const d = new Date(at);
+  const today = new Date();
+  const start = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((start(today) - start(d)) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function filteredNotifications() {
+  const needle = notifView.query.trim().toLowerCase();
+  return notifView.items.filter((n) => {
+    if (notifView.filter === 'unread' && n.read) return false;
+    if (notifView.filter === 'error' && n.kind !== 'error' && n.kind !== 'warn') return false;
+    if (notifView.filter === 'docker' && n.source !== 'docker') return false;
+    if (needle && !`${n.project} ${n.text}`.toLowerCase().includes(needle)) return false;
+    return true;
+  });
+}
+
+function paintNotifications() {
+  loadNotifications();
+  const unread = unreadCount();
+  const badge = byId('bell-badge');
+  badge.hidden = unread === 0;
+  badge.textContent = unread > 99 ? '99+' : String(unread);
+  byId('tb-bell').setAttribute('aria-label', unread ? `Notifications, ${unread} unread` : 'Notifications');
+
+  // The bell panel: the newest 8.
+  const small = byId('bell-list');
+  small.textContent = '';
+  for (const n of notifView.items.slice(0, 8)) small.appendChild(notifRow(n));
+  if (!notifView.items.length) {
+    const empty = makeElement('li', 'notif-empty');
+    empty.textContent = 'No notifications yet. Starting, stopping and errors show here.';
+    small.appendChild(empty);
+  }
+  byId('bell-read-all').disabled = unread === 0;
+
+  // The full page, grouped by day.
+  const list = byId('notif-list');
+  list.textContent = '';
+  const shown = filteredNotifications();
+  let day = '';
+  for (const n of shown) {
+    const label = dayLabel(n.at);
+    if (label !== day) {
+      day = label;
+      const head = makeElement('li', 'notif-day');
+      head.textContent = label;
+      list.appendChild(head);
+    }
+    list.appendChild(notifRow(n, { full: true }));
+  }
+  if (!shown.length) {
+    const empty = makeElement('li', 'notif-empty');
+    empty.textContent = notifView.items.length ? 'Nothing matches this filter or search.' : 'No notifications yet. Starting, stopping and errors show here.';
+    list.appendChild(empty);
+  }
+  setText('notif-foot', `${notifView.items.length} notification${notifView.items.length === 1 ? '' : 's'} · ${unread} unread`);
+  byId('notif-read-all').disabled = unread === 0;
+  byId('notif-clear').disabled = notifView.items.length === 0;
+}
+
+function openBellPanel() {
+  paintNotifications();
+  byId('bell-panel').hidden = false;
+  byId('tb-bell').setAttribute('aria-expanded', 'true');
+}
+
+// Closing the panel marks what was shown as read.
+function closeBellPanel() {
+  const panel = byId('bell-panel');
+  if (panel.hidden) return;
+  panel.hidden = true;
+  byId('tb-bell').setAttribute('aria-expanded', 'false');
+  markAllRead();
+}
+
+function bindNotifications() {
+  loadNotifications();
+  byId('tb-bell').addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (byId('bell-panel').hidden) openBellPanel();
+    else closeBellPanel();
+  });
+  byId('bell-panel').addEventListener('click', (event) => event.stopPropagation());
+  document.addEventListener('click', closeBellPanel);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeBellPanel();
+  });
+  byId('bell-read-all').addEventListener('click', markAllRead);
+  byId('bell-see-all').addEventListener('click', () => {
+    closeBellPanel();
+    showView('notifications');
+    window.scrollTo({ top: 0 });
+  });
+  byId('notif-read-all').addEventListener('click', markAllRead);
+  byId('notif-clear').addEventListener('click', async () => {
+    const ok = await confirmDialog({ title: 'Clear all notifications?', body: 'The list is emptied. Your projects and containers are not changed.', okLabel: 'Clear all' });
+    if (!ok) return;
+    notifView.items = [];
+    saveNotifications();
+    paintNotifications();
+  });
+  byId('notif-search').addEventListener('input', (event) => {
+    notifView.query = event.target.value;
+    paintNotifications();
+  });
+  for (const button of document.querySelectorAll('[data-notif-filter]')) {
+    button.addEventListener('click', () => {
+      notifView.filter = button.dataset.notifFilter;
+      for (const other of document.querySelectorAll('[data-notif-filter]')) other.setAttribute('aria-pressed', other === button ? 'true' : 'false');
+      paintNotifications();
+    });
+  }
+  // "5m ago" moves on by itself.
+  setInterval(() => {
+    if (!byId('bell-panel').hidden || document.body.dataset.view === 'notifications') paintNotifications();
+  }, 60000);
+  paintNotifications();
+}
+
 // ---------- Containers ----------
 
 // Every ProjectDockHub container in one table, grouped under its project, with bulk Stop and Delete.
@@ -5558,6 +5868,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   window.envhub.onContainersChanged((change) => {
     rememberEvent(change);
+    notifyDockerEvent(change);
     // What was cached for that project is old now. The open project is read again by the refresh below.
     if (change && change.project && change.project !== detailState.name && overviewCache.has(change.project)) refreshProjectCache(change.project, 1500);
     scheduleRefreshContainers();
@@ -5608,6 +5919,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   byId('name-example').textContent = dockerName('shop', 'php');
   bindProjectsPage();
   bindContainersPage();
+  bindNotifications();
   // Every message bar closes with its x button.
   document.addEventListener('click', (event) => {
     const close = event.target.closest('.note-close');
