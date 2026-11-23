@@ -1,5 +1,6 @@
 'use strict';
 
+const { MANAGED_FILTER, projectFilter, composeProject, containerName } = require('../naming');
 // Live numbers for the project details page: CPU and memory of the running containers, the size of
 // the project's volumes, and opening a shell in one service. Every docker call uses an argument array.
 
@@ -20,9 +21,9 @@ function parseSize(text, table = { ...BINARY, ...DECIMAL }) {
 }
 
 // Output of `docker stats --no-stream --format {{json .}}`, one JSON object per line.
-// The container name is envhub-<project>-<service>, so the service is the part after the project.
+// The container name is <prefix>-<project>-<service>, so the service is the part after the project.
 function parseStatsLines(text, projectName) {
-  const prefix = `envhub-${projectName}-`;
+  const prefix = `${composeProject(projectName)}-`;
   const rows = [];
   for (const line of String(text || '').split('\n')) {
     if (!line.trim()) continue;
@@ -48,7 +49,7 @@ function parseStatsLines(text, projectName) {
 // Output of `docker system df -v` (plain text). Only the "Local Volumes" table is read.
 // Columns are separated by two or more spaces: VOLUME NAME, LINKS, SIZE.
 function parseVolumeSizes(text, projectName) {
-  const prefix = `envhub-${projectName}-`;
+  const prefix = `${composeProject(projectName)}-`;
   const lines = String(text || '').split('\n');
   const start = lines.findIndex((line) => /^VOLUME NAME\s+LINKS\s+SIZE/.test(line.trim()));
   if (start < 0) return [];
@@ -75,8 +76,8 @@ async function projectStats(projectName) {
   assertName(projectName);
   const ids = await runDocker([
     'ps', '-q',
-    '--filter', 'label=com.envhub.managed=true',
-    '--filter', `label=com.envhub.project=${projectName}`,
+    '--filter', MANAGED_FILTER,
+    '--filter', projectFilter(projectName),
   ]);
   const idList = ids.ok ? ids.stdout.split('\n').map((s) => s.trim()).filter(Boolean) : [];
   if (idList.length === 0) {
@@ -129,7 +130,7 @@ async function openShell(projectName, service, { platform = process.platform, sp
   if (workdir !== undefined && workdir !== '' && !WORKDIR_RE.test(workdir)) {
     throw new Error('Invalid folder');
   }
-  const container = `envhub-${projectName}-${service}`;
+  const container = containerName(projectName, service);
   const running = await runDocker([
     'ps', '--filter', `name=^${container}$`, '--filter', 'status=running', '--format', '{{.Names}}',
   ]);

@@ -1,5 +1,6 @@
 'use strict';
 
+const { phpImage } = require('../naming');
 const path = require('path');
 const { NAME_RE } = require('../compose/generate');
 const svc = require('./services');
@@ -84,7 +85,7 @@ function laravelProject({ name, phpVersion, folder, dbPassword, options, version
     },
     {
       name: 'php',
-      image: `envhub-${name}-php`,
+      image: phpImage(name),
       build: { context: phpContext, dockerfile: 'Dockerfile' },
       // The hash makes Docker recreate the container when php.ini changes, so PHP reads the new file.
       env: { ENVHUB_PHP_INI: iniHash(phpIni), ...COMPOSER_ENV },

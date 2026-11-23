@@ -10,6 +10,7 @@ if (process.platform === 'linux') {
 }
 const fs = require('fs');
 const path = require('path');
+const naming = require('./naming');
 const { checkDocker } = require('./docker/check');
 const { startDockerDesktop, downloadUrl } = require('./docker/launch');
 const { shutDownDocker } = require('./docker/desktop');
@@ -113,7 +114,7 @@ function dataDir() {
 // The old default folder keeps being used when it exists, so the projects made before the rename stay together
 // with the new ones. It is always one of the folders a project can be deleted from.
 function legacyProjectsDir() {
-  return path.join(app.getPath('home'), 'envhub-projects');
+  return path.join(app.getPath('home'), naming.projectsFolderName);
 }
 
 function defaultProjectsDir() {
@@ -134,6 +135,8 @@ function projectsSettings() {
     projectsDir: projectsBaseDir(),
     defaultDir: defaultProjectsDir(),
     isDefault: projectsBaseDir() === defaultProjectsDir(),
+    // Where ProjectDockHub keeps the compose file of each project (<app data>/projects/<name>/compose.json).
+    dockerFilesDir: path.join(dataDir(), 'projects'),
     stopDockerOnExit: settings.stopDockerOnExit(),
   };
 }
@@ -313,7 +316,7 @@ async function runInstall(installOpts, portableSpec) {
 }
 
 function registerIpcHandlers() {
-  handle('app:getInfo', () => ({ name: app.getName(), version: app.getVersion() }));
+  handle('app:getInfo', () => ({ name: app.getName(), version: app.getVersion(), prefix: naming.PREFIX }));
   handle('docker:check', () => checkDocker());
   // Window buttons of the Linux title bar (the window has no native one there).
   handle('window:control', (action) => {
@@ -437,6 +440,13 @@ function registerIpcHandlers() {
     if (res.canceled || res.filePaths.length === 0) return projectsSettings();
     settings.setProjectsDir(res.filePaths[0], { dataDir: dataDir() });
     return projectsSettings();
+  });
+  // Opens the folder with the compose files in Explorer / Finder. The path is built here, never sent by the window.
+  handle('settings:openDockerFilesDir', async () => {
+    const dir = path.join(dataDir(), 'projects');
+    fs.mkdirSync(dir, { recursive: true });
+    const error = await shell.openPath(dir);
+    return { ok: !error, error };
   });
   handle('settings:resetProjectsDir', () => {
     settings.resetProjectsDir();
@@ -675,6 +685,7 @@ function registerIpcHandlers() {
   // One service of a project: its stop and start icons in the Services list.
   handle('service:stop', (name, service) => serviceAction(requireSpec(name).name, service, 'stop'));
   handle('service:start', (name, service) => serviceAction(requireSpec(name).name, service, 'start'));
+  handle('service:remove', (name, service) => serviceAction(requireSpec(name).name, service, 'remove'));
 
   handle('project:delete', async (name, options) => {
     const spec = requireSpec(name);

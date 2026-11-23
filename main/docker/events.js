@@ -1,5 +1,6 @@
 'use strict';
 
+const { LABELS, MANAGED_FILTER } = require('../naming');
 const { spawn } = require('child_process');
 
 const WATCHED_ACTIONS = new Set([
@@ -9,7 +10,7 @@ const WATCHED_ACTIONS = new Set([
 const RESTART_AFTER_MS = 3000;
 const STABLE_AFTER_MS = 1500;
 
-// Streams container events for envhub-managed containers.
+// Streams container events for ProjectDockHub containers.
 // This avoids polling, so idle CPU stays low.
 // When Docker stops, `docker events` ends. It is started again every few seconds until Docker is back, so the
 // window keeps getting updates after Docker Desktop was closed and opened again.
@@ -41,8 +42,8 @@ function startEvents(onChange, onError, onState, spawnFn = spawn) {
       action,
       id: event.Actor ? event.Actor.ID : null,
       name: attrs.name || null,
-      project: attrs['com.envhub.project'] || null,
-      service: attrs['com.envhub.service'] || null,
+      project: attrs[LABELS.project] || null,
+      service: attrs[LABELS.service] || null,
     });
   }
 
@@ -65,7 +66,7 @@ function startEvents(onChange, onError, onState, spawnFn = spawn) {
       [
         'events',
         '--filter', 'type=container',
-        '--filter', 'label=com.envhub.managed=true',
+        '--filter', MANAGED_FILTER,
         '--format', '{{json .}}',
       ],
       { windowsHide: true },

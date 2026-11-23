@@ -1,5 +1,6 @@
 'use strict';
 
+const { LABELS } = require('../naming');
 const { runDocker } = require('./exec');
 
 const ID_RE = /^[a-f0-9]{12,64}$/;
@@ -61,11 +62,11 @@ function parseInspectOutput(text, excludeProject) {
 
     const [rawName, running, rawLabels, rawBindings, rawLive] = fields;
     const labels = parseJson(rawLabels) || {};
-    if (excludeProject && labels['com.envhub.project'] === excludeProject) continue;
+    if (excludeProject && labels[LABELS.project] === excludeProject) continue;
 
     const owner = {
       name: rawName.replace(/^\//, ''),
-      project: labels['com.docker.compose.project'] || labels['com.envhub.project'] || null,
+      project: labels['com.docker.compose.project'] || labels[LABELS.project] || null,
       running: running.trim() === 'true',
     };
 

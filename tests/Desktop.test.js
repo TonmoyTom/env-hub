@@ -83,6 +83,10 @@ test('one service: stop and start find the container by the project and service 
   assert.deepStrictEqual(calls[1], ['stop', 'aaaaaaaaaaaa']);
   await serviceAction('shop', 'mysql', 'start', run);
   assert.deepStrictEqual(calls[3], ['start', 'aaaaaaaaaaaa']);
+  // Remove deletes only the container (named volumes stay).
+  await serviceAction('shop', 'mysql', 'remove', run);
+  assert.deepStrictEqual(calls[5], ['rm', '-f', 'aaaaaaaaaaaa']);
+  await assert.rejects(() => serviceAction('shop', 'mysql', 'toString', run), /Invalid action/);
 
   const none = await serviceAction('shop', 'redis', 'start', async () => ({ ok: true, stdout: '', stderr: '' }));
   assert.strictEqual(none.ok, false);

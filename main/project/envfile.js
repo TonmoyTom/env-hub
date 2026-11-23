@@ -1,11 +1,12 @@
 'use strict';
 
+const { envBackupName } = require('../naming');
 const fs = require('fs');
 const path = require('path');
 const { isInside } = require('./folders');
 
 // Writes the .env text into the project folder (inside the ProjectDockHub projects folder only).
-// An existing .env that differs is copied to .env.envhub-backup (or -2, -3...) first, never lost.
+// An existing .env that differs is copied to .env.<prefix>-backup (or -2, -3...) first, never lost.
 // Returns { status: 'created' | 'updated' | 'unchanged', file, backup }. Throws a readable error.
 function writeEnvFile(base, folder, text) {
   if (!isInside(base, folder)) {
@@ -28,8 +29,8 @@ function writeEnvFile(base, folder, text) {
 
   let backup = null;
   if (existing !== null) {
-    backup = path.join(folder, '.env.envhub-backup');
-    for (let i = 2; fs.existsSync(backup); i += 1) backup = path.join(folder, `.env.envhub-backup-${i}`);
+    backup = path.join(folder, envBackupName);
+    for (let i = 2; fs.existsSync(backup); i += 1) backup = path.join(folder, `${envBackupName}-${i}`);
     fs.writeFileSync(backup, existing, { mode: 0o600 });
   }
 

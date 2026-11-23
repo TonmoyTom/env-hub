@@ -95,6 +95,46 @@ function renderStatus(status) {
   el.detail.textContent = `${status.clientVersion} | Server ${status.serverVersion}`;
 }
 
+// The status bar, the Docker pill in the top bar, the engine block in the sidebar and the engine card
+// on the Projects page all show the same Docker check.
+let lastDockerStatus = null;
+
+function dockerVersionParts(status) {
+  const text = (status && status.clientVersion) || '';
+  const m = /version\s+([\w.+-]+)(?:,\s*build\s+(\w+))?/i.exec(text);
+  return { version: m ? m[1] : (status && status.serverVersion) || '', build: m && m[2] ? m[2] : '' };
+}
+
+function paintStatusBar(status) {
+  lastDockerStatus = status;
+  const running = Boolean(status && status.running);
+  const state = !status ? 'checking' : running ? 'ok' : 'bad';
+  const { version, build } = dockerVersionParts(status);
+  for (const id of ['sb-dot', 'tb-docker-dot', 'ovc-engine-dot']) {
+    const dot = document.getElementById(id);
+    if (dot) dot.dataset.state = state;
+  }
+  byId('sf-state').dataset.state = state;
+  byId('sb-engine').dataset.state = state;
+  const missing = Boolean(status && status.reason === 'not-found');
+  const word = !status ? 'Checking' : running ? 'Running' : missing ? 'Not installed' : 'Not running';
+  setText('sf-state-text', word);
+  setText('sf-ver', [version, build].filter(Boolean).join(' · '));
+  setText('sb-engine-text', !status ? 'Checking engine' : running ? 'Engine running' : missing ? 'Docker not installed' : 'Engine stopped');
+  const server = running && status.serverVersion ? ` · Server ${status.serverVersion}` : '';
+  setText('sb-docker', version ? `Docker ${version}${build ? `, build ${build}` : ''}${server}` : '');
+  setText('tb-docker-text', version ? `Docker ${version}` : running ? 'Docker' : missing ? 'No Docker' : status ? 'Docker off' : 'Docker');
+  setText('ovc-engine', version ? `v${version}` : missing ? 'not installed' : status ? 'not running' : '–');
+  setText('ovc-engine-build', build ? `build ${build}` : '');
+  setText('ovc-engine-server', running && status.serverVersion ? `server ${status.serverVersion}` : '');
+  document.body.classList.toggle('docker-ok', running);
+  paintSettingsDocker();
+}
+
+function paintStopOnExit(value) {
+  setText('sb-stop-exit', `stop-on-exit: ${value ? 'on' : 'off'}`);
+}
+
 // The Docker icon is blue when Docker runs, amber when it does not, grey while it is being checked.
 function paintDockerMark() {
   el.dockerMark.dataset.state = el.title.textContent === 'Docker is running' ? 'ok' : 'bad';
@@ -119,6 +159,7 @@ async function quietCheckDocker() {
       dockerKey = key;
       clearGuidance();
       renderStatus(status);
+      paintStatusBar(status);
       paintDockerMark();
       loadProjects();
       scheduleRefreshContainers();
@@ -174,6 +215,7 @@ async function startDocker() {
 async function checkDocker() {
   el.button.disabled = true;
   el.dockerMark.dataset.state = 'checking';
+  paintStatusBar(null);
   el.dockerArt.hidden = true;
   el.title.textContent = 'Checking Docker...';
   el.detail.textContent = '';
@@ -183,10 +225,12 @@ async function checkDocker() {
     const status = await window.envhub.checkDocker();
     dockerKey = `${status.reason}|${status.serverVersion}`;
     renderStatus(status);
+    paintStatusBar(status);
     paintDockerMark();
   } catch (err) {
     dockerKey = 'error|';
     renderStatus({ reason: 'error', running: false, platform: '' });
+    paintStatusBar({ running: false });
     paintDockerMark();
   } finally {
     el.button.disabled = false;
@@ -727,6 +771,46 @@ function askDeleteProject(project) {
   });
 }
 
+// A plain yes / no question in the same in-page dialog. Resolves true or false.
+function confirmDialog({ title, body, okLabel }) {
+  return new Promise((resolve) => {
+    const modal = byId('confirm-modal');
+    const ok = byId('confirm-ok');
+    const cancel = byId('confirm-cancel');
+    const before = ok.textContent;
+    byId('confirm-title').textContent = title;
+    const box = byId('confirm-body');
+    box.textContent = '';
+    for (const part of String(body).split('\n\n')) {
+      const para = makeElement('p', 'muted small');
+      para.textContent = part;
+      box.appendChild(para);
+    }
+    ok.textContent = okLabel;
+    const finish = (value) => {
+      modal.hidden = true;
+      ok.textContent = before;
+      ok.removeEventListener('click', onOk);
+      cancel.removeEventListener('click', onCancel);
+      document.removeEventListener('keydown', onKey, true);
+      resolve(value);
+    };
+    const onOk = () => finish(true);
+    const onCancel = () => finish(false);
+    const onKey = (event) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        finish(false);
+      }
+    };
+    ok.addEventListener('click', onOk);
+    cancel.addEventListener('click', onCancel);
+    document.addEventListener('keydown', onKey, true);
+    modal.hidden = false;
+    cancel.focus();
+  });
+}
+
 async function startDeleteProject(name) {
   const project = projectsView.list.find((p) => p.name === name);
   if (!project) return;
@@ -748,18 +832,6 @@ function showPanel(title, text) {
 }
 
 let logsName = '';
-
-async function showLogs(name) {
-  logsName = name;
-  showPanel(`Logs: ${name}`, 'Loading...');
-  try {
-    const text = await window.envhub.projectLogs(name);
-    el.logsOutput.textContent = text.trim() ? text : 'No logs yet.';
-    el.logsOutput.scrollTop = el.logsOutput.scrollHeight;
-  } catch (err) {
-    el.logsOutput.textContent = `Could not load logs: ${err.message}`;
-  }
-}
 
 // ---------- Small icons and copy buttons ----------
 
@@ -813,6 +885,18 @@ async function copyWithFeedback(text, button) {
     setTimeout(() => {
       button.replaceChildren(icon('copy'));
       button.classList.remove('copied');
+    }, 1400);
+  } else if (button.classList.contains('ibtn') || button.classList.contains('hero-url')) {
+    // Icon buttons and links keep what they show; a check mark (or "Copied") flashes for a moment.
+    const before = [...button.childNodes];
+    const label = button.getAttribute('aria-label');
+    button.replaceChildren(button.classList.contains('ibtn') ? icon('check') : document.createTextNode('Copied'));
+    button.classList.add('copied');
+    if (label) button.setAttribute('aria-label', 'Copied');
+    setTimeout(() => {
+      button.replaceChildren(...before);
+      button.classList.remove('copied');
+      if (label) button.setAttribute('aria-label', label);
     }, 1400);
   } else {
     const before = button.textContent;
@@ -923,7 +1007,8 @@ function renderCredentials(name, data) {
     seg.setAttribute('role', 'group');
     seg.setAttribute('aria-label', 'Where your app runs');
     const explain = makeElement('p', 'muted small cred-explain');
-    const code = makeElement('pre', 'code-block');
+    const code = makeElement('div', 'env-block');
+    let showSecrets = false;
     const choices = ENV_TARGETS.map(([value, label]) => {
       const button = addButton(seg, label, () => pick(value));
       button.dataset.value = value;
@@ -937,11 +1022,48 @@ function renderCredentials(name, data) {
       warning.hidden = !(value === 'host' && data.appInDocker);
       for (const button of choices) button.setAttribute('aria-pressed', button.dataset.value === value ? 'true' : 'false');
       explain.textContent = ENV_TARGETS.find((t) => t[0] === value)[2];
-      code.textContent = data.env[value].trim() || '# Nothing to add for this project.';
+      paintEnv();
+    }
+    function paintEnv() {
+      code.textContent = '';
+      const comment = makeElement('div', 'env-comment');
+      comment.textContent = `# ProjectDockHub · ${name} · ${target === 'docker' ? 'inside Docker' : 'outside Docker'}`;
+      code.appendChild(comment);
+      const text = data.env[target].trim();
+      if (!text) {
+        const none = makeElement('div', 'env-comment');
+        none.textContent = '# Nothing to add for this project.';
+        code.appendChild(none);
+        return;
+      }
+      for (const line of text.split('\n')) {
+        const row = makeElement('div', '');
+        const at = line.indexOf('=');
+        if (line.trim().startsWith('#') || at < 1) {
+          row.className = 'env-comment';
+          row.textContent = line;
+        } else {
+          const key = makeElement('span', 'env-key');
+          key.textContent = line.slice(0, at);
+          const eq = makeElement('span', 'env-eq');
+          eq.textContent = '=';
+          const value = makeElement('span', 'env-val');
+          const secret = /PASS|SECRET|TOKEN|KEY/i.test(line.slice(0, at)) && line.slice(at + 1) !== '';
+          value.textContent = secret && !showSecrets ? '••••••••••••••••' : line.slice(at + 1);
+          if (secret && showSecrets) value.classList.add('env-secret');
+          row.append(key, eq, value);
+        }
+        code.appendChild(row);
+      }
     }
     const actions = makeElement('div', 'row-actions');
+    const reveal = addButton(actions, 'Show password', () => {
+      showSecrets = !showSecrets;
+      reveal.textContent = showSecrets ? 'Hide password' : 'Show password';
+      paintEnv();
+    });
     const copyButton = addButton(actions, 'Copy', () => copyWithFeedback(data.env[target], copyButton));
-    addButton(actions, 'Write to project folder', async () => {
+    const writeButton = addButton(actions, 'Write to project folder', async () => {
       try {
         const res = await window.envhub.writeEnv(name, target);
         const word = { created: 'Created', updated: 'Updated', unchanged: 'Already up to date:' }[res.status];
@@ -950,6 +1072,8 @@ function renderCredentials(name, data) {
         status.textContent = `Could not write .env: ${ipcMessage(err)}`;
       }
     });
+    writeButton.classList.add('primary');
+    for (const button of actions.children) button.classList.add('btn-sm');
     const top = makeElement('div', 'cred-env-top');
     top.append(seg, actions);
     section.append(top, explain, warning, code);
@@ -1041,11 +1165,11 @@ function renderCredentials(name, data) {
 // A tip for slow projects on Windows: Defender scans every file Docker reads from the project folder.
 // Gives one command to copy, and the same steps for people who do not want to use a command.
 // `top` is the version on the project Overview: a coloured card, with a button to hide it for good.
-const SLOW_TIP_KEY = 'envhub.hideSlowTip';
+const slowTipKey = () => `${NAME_PREFIX}.hideSlowTip`;
 
 function slowTipHidden() {
   try {
-    return localStorage.getItem(SLOW_TIP_KEY) === '1';
+    return localStorage.getItem(slowTipKey()) === '1';
   } catch (err) {
     return false;
   }
@@ -1121,7 +1245,7 @@ function slowOnWindowsTip(folder, { top = false, project = null } = {}) {
     const hideRow = makeElement('div', 'row-actions');
     addButton(hideRow, 'Do not show this again', () => {
       try {
-        localStorage.setItem(SLOW_TIP_KEY, '1');
+        localStorage.setItem(slowTipKey(), '1');
       } catch (err) {
         // The tip just comes back next time.
       }
@@ -1206,7 +1330,7 @@ function addButton(parent, label, onClick) {
 
 // ---------- Projects page ----------
 
-const projectsView = { list: [], filter: 'all', query: '' };
+const projectsView = { list: [], containers: [], filter: 'all', query: '' };
 
 // Short mark and colour for each stack, shown on the project card.
 const STACK_MARKS = {
@@ -1381,141 +1505,486 @@ function moreButton(project) {
   return button;
 }
 
-function buildProjectCard(project) {
+// ---------- Projects table (DevOps console look) ----------
+
+const ROW_ICONS = {
+  chevronRight: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>',
+  chevronDown: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>',
+  stack: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"></path><path d="M3 13l9 5 9-5"></path></svg>',
+  box: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"></path><path d="M3 8l9 5 9-5M12 13v8"></path></svg>',
+  stop: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5"></rect></svg>',
+  play: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5v14l12-7z"></path></svg>',
+  terminal: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-5-6-5M12 19h8"></path></svg>',
+  dots: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>',
+  trash: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"></path></svg>',
+  external: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"></path></svg>',
+  logs: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5M9 13h6M9 17h6"></path></svg>',
+  copy: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg>',
+  restart: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg>',
+};
+
+// Rows that show their containers. The first project starts open, like in the design.
+const expandedProjects = new Set();
+let expandedSeeded = false;
+const selectedProjects = new Set();
+
+// Fixed SVG markup from this file only, so innerHTML is safe here.
+function rowIconButton(iconHtml, label, onClick, extraClass = '') {
+  const button = makeElement('button', `ibtn ${extraClass}`.trim());
+  button.type = 'button';
+  button.title = label;
+  button.setAttribute('aria-label', label);
+  button.innerHTML = iconHtml;
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    onClick(event);
+  });
+  return button;
+}
+
+function containersOf(name) {
+  return (projectsView.containers || []).filter((c) => c.project === name);
+}
+
+function shellService(project) {
+  for (const candidate of ['php', 'app', 'node', 'web']) {
+    if (project.services.includes(candidate)) return candidate;
+  }
+  return project.services[0];
+}
+
+// A row of small bars, one per container: green when it runs.
+function healthBars(containers) {
+  const box = makeElement('span', 'hbars');
+  box.setAttribute('aria-hidden', 'true');
+  for (const c of containers) box.appendChild(makeElement('span', c.state === 'running' ? 'on' : 'off'));
+  return box;
+}
+
+// Minutes since a container started, read from Docker's "Up 55 minutes" text (null when not running).
+function upMinutes(status) {
+  const m = /^Up\s+(?:About\s+)?(an?|\d+)\s+(second|minute|hour|day|week|month)/i.exec(status || '');
+  if (!m) return /^Up\s+Less than a second/i.test(status || '') ? 0 : null;
+  const n = /^an?$/i.test(m[1]) ? 1 : Number(m[1]);
+  const unit = { second: 1 / 60, minute: 1, hour: 60, day: 1440, week: 10080, month: 43200 }[m[2].toLowerCase()];
+  return n * unit;
+}
+
+function agoText(minutes, short = false) {
+  if (minutes === null || minutes === undefined) return '—';
+  if (minutes < 1) return short ? 'now' : 'just now';
+  const units = [[43200, 'month', 'mo'], [1440, 'day', 'd'], [60, 'hour', 'h'], [1, 'minute', 'm']];
+  for (const [size, long, abbr] of units) {
+    if (minutes >= size) {
+      const n = Math.floor(minutes / size);
+      return short ? `${n}${abbr} ago` : `${n} ${long}${n === 1 ? '' : 's'} ago`;
+    }
+  }
+  return '—';
+}
+
+function sinceText(containers) {
+  const times = containers.map((c) => upMinutes(c.status)).filter((m) => m !== null);
+  return times.length ? agoText(Math.max(...times)) : '—';
+}
+
+function openPortLink(project, port, text) {
+  const link = makeElement('button', 'port-link');
+  link.type = 'button';
+  link.textContent = text || `${port.host}:${port.container}`;
+  link.title = `Open ${port.service} on localhost:${port.host}`;
+  link.addEventListener('click', (event) => {
+    event.stopPropagation();
+    window.envhub.openPort(project.name, port.service, port.container)
+      .catch((err) => setActionStatus(`Could not open: ${ipcMessage(err)}`, project.name, 'error'));
+  });
+  return link;
+}
+
+// A small dot plus a word, never colour alone.
+function statusCell(state, text, strong = false) {
+  const cell = makeElement('span', `st st-${state}${strong ? ' strong' : ''}`);
+  const dot = makeElement('span', 'st-dot');
+  dot.setAttribute('aria-hidden', 'true');
+  const word = makeElement('span', '');
+  word.textContent = text;
+  cell.append(dot, word);
+  return cell;
+}
+
+function openShell(name, service) {
+  window.envhub.projectShell(name, service)
+    .catch((err) => setActionStatus(`Could not open a terminal: ${ipcMessage(err)}`, name, 'error'));
+}
+
+function td(className = '') {
+  return makeElement('td', className);
+}
+
+function containerChildRow(project, c) {
+  const up = c.state === 'running';
+  const row = makeElement('tr', 'trow child');
+  const name = td('c-name');
+  const nameWrap = makeElement('span', 'c-name-wrap');
+  const boxIcon = makeElement('span', 'c-box');
+  boxIcon.innerHTML = ROW_ICONS.box;
+  const svc = makeElement('span', 'c-svc');
+  svc.textContent = c.service || c.name;
+  const full = makeElement('span', 'c-full mono');
+  full.textContent = c.name;
+  nameWrap.append(boxIcon, svc, full);
+  name.appendChild(nameWrap);
+  const image = td('mono c-image');
+  image.textContent = c.image || '—';
+  const status = td();
+  const word = up ? 'Running' : String(c.state || 'stopped').replace(/^./, (x) => x.toUpperCase());
+  status.appendChild(statusCell(up ? 'running' : 'stopped', word));
+  const ports = td('c-ports');
+  const own = project.ports.filter((p) => p.service === c.service);
+  if (own.length) for (const p of own) ports.appendChild(openPortLink(project, p));
+  else {
+    ports.textContent = 'internal';
+    ports.classList.add('muted');
+  }
+  const since = td('muted');
+  since.textContent = up ? agoText(upMinutes(c.status)) : '—';
+  const actionsCell = td('col-actions');
+  const actions = makeElement('div', 'row-icons');
+  if (c.service) {
+    const power = rowIconButton(up ? ROW_ICONS.stop : ROW_ICONS.play, `${up ? 'Stop' : 'Start'} ${c.service}`, async () => {
+      try {
+        await (up ? window.envhub.stopService(project.name, c.service) : window.envhub.startService(project.name, c.service));
+      } catch (err) {
+        setActionStatus(`Could not ${up ? 'stop' : 'start'} ${c.service}: ${ipcMessage(err)}`, project.name, 'error');
+      }
+      loadProjects();
+    }, 'sm');
+    const shell = rowIconButton(ROW_ICONS.terminal, `Open shell in ${c.service}`, () => openShell(project.name, c.service), 'sm');
+    shell.disabled = !up;
+    actions.append(power, shell);
+  }
+  actionsCell.appendChild(actions);
+  row.append(td(), name, image, status, ports, since, actionsCell);
+  return row;
+}
+
+function buildProjectRows(project) {
   const state = STATUS_TEXT[project.state] ? project.state : 'stopped';
   const running = state !== 'stopped';
-  const mark = STACK_MARKS[project.stack] || { text: project.name.slice(0, 2), color: '#64748B' };
+  const containers = containersOf(project.name);
+  const up = containers.filter((c) => c.state === 'running').length;
+  const total = containers.length || project.services.length;
+  const open = expandedProjects.has(project.name);
+  const rows = [];
 
-  const card = makeElement('article', 'pcard');
-  card.dataset.project = project.name;
-  card.style.setProperty('--brand', mark.color);
+  const row = makeElement('tr', 'trow parent');
+  row.dataset.project = project.name;
+  row.classList.toggle('open', open);
+  row.classList.toggle('selected', selectedProjects.has(project.name));
 
-  const head = makeElement('div', 'pcard-head');
-  const badgeMark = makeElement('div', 'pcard-mark');
-  badgeMark.setAttribute('aria-hidden', 'true');
-  badgeMark.textContent = mark.text;
-  const title = makeElement('div', 'pcard-title');
-  const heading = makeElement('h3', '');
-  const nameButton = makeElement('button', 'link-name');
+  const checkCell = td('col-check');
+  const check = document.createElement('input');
+  check.type = 'checkbox';
+  check.checked = selectedProjects.has(project.name);
+  check.setAttribute('aria-label', `Select ${project.name}`);
+  check.addEventListener('change', () => {
+    if (check.checked) selectedProjects.add(project.name);
+    else selectedProjects.delete(project.name);
+    row.classList.toggle('selected', check.checked);
+  });
+  checkCell.appendChild(check);
+
+  const nameCell = td();
+  const nameWrap = makeElement('div', 'p-name');
+  const chevron = rowIconButton(open ? ROW_ICONS.chevronDown : ROW_ICONS.chevronRight, `${open ? 'Collapse' : 'Expand'} ${project.name}`, () => {
+    if (expandedProjects.has(project.name)) expandedProjects.delete(project.name);
+    else expandedProjects.add(project.name);
+    renderProjects();
+  }, 'chev');
+  chevron.setAttribute('aria-expanded', open ? 'true' : 'false');
+  const icon = makeElement('span', 'stack-ico');
+  icon.innerHTML = ROW_ICONS.stack;
+  const nameButton = makeElement('button', 'name-link');
   nameButton.type = 'button';
   nameButton.textContent = project.name;
   nameButton.title = 'Open the project details';
   nameButton.addEventListener('click', () => openDetail(project.name));
-  heading.appendChild(nameButton);
-  const stack = makeElement('p', 'pcard-stack');
-  stack.textContent = project.label;
-  title.append(heading, stack);
-  const badge = makeElement('span', `status status-${state}`);
-  badge.textContent = `● ${STATUS_TEXT[state]}`;
-  head.append(badgeMark, title, badge);
+  nameWrap.append(chevron, icon, nameButton);
+  nameCell.appendChild(nameWrap);
 
-  const body = makeElement('div', 'pcard-body');
-  const ports = makeElement('div', 'pcard-ports');
-  for (const port of project.ports) {
-    const line = makeElement('span', running ? 'live' : 'muted');
-    line.textContent = `${port.service}  localhost:${port.host}`;
-    ports.appendChild(line);
-  }
-  if (project.ports.length > 0) {
-    body.appendChild(ports);
-  } else {
-    const note = makeElement('p', 'pcard-note');
-    note.textContent = 'No web address yet. Start the project to see one.';
-    body.appendChild(note);
-  }
+  const stackCell = td('fg2');
+  stackCell.textContent = project.label;
 
-  if (project.services.length > 0) {
-    const chips = makeElement('div', 'chips');
-    for (const service of project.services) {
-      const chip = makeElement('span', 'svc-chip');
-      chip.textContent = service;
-      chips.appendChild(chip);
+  const statusCellTd = td();
+  statusCellTd.appendChild(statusCell(state, `${STATUS_TEXT[state]} (${up}/${total})`, true));
+  if (containers.length) statusCellTd.appendChild(healthBars(containers));
+
+  const portsCell = td('p-ports');
+  if (project.ports.length) {
+    portsCell.appendChild(openPortLink(project, project.ports[0]));
+    if (project.ports.length > 1) {
+      const more = makeElement('button', 'link-quiet');
+      more.type = 'button';
+      more.textContent = `· Show all ports (${project.ports.length})`;
+      more.addEventListener('click', () => {
+        expandedProjects.add(project.name);
+        renderProjects();
+      });
+      portsCell.append(' ', more);
     }
-    body.appendChild(chips);
-  }
-
-  const foot = makeElement('div', 'pcard-foot');
-  const actions = makeElement('div', 'pcard-actions');
-  if (running) {
-    const openButton = addButton(actions, 'Open', () => runProjectAction('Open', 'openProject', project.name));
-    openButton.classList.add('primary');
-    addButton(actions, 'Stop', () => runProjectAction('Stop', 'stopProject', project.name));
   } else {
-    const startButton = addButton(actions, 'Start', () => startFromList(project.name));
-    startButton.classList.add('primary');
+    portsCell.textContent = '—';
+    portsCell.classList.add('muted');
   }
 
-  // Everything else is in a floating menu behind the "..." button, so the card never grows.
-  actions.appendChild(moreButton(project));
+  const sinceCell = td('fg2');
+  sinceCell.textContent = running ? sinceText(containers) : '—';
 
-  foot.appendChild(actions);
-  card.append(head, body, foot);
+  const actionsCell = td('col-actions');
+  const actions = makeElement('div', 'row-icons');
+  if (running) {
+    const openButton = makeElement('button', 'btn-open');
+    openButton.type = 'button';
+    openButton.innerHTML = `<span>Open</span>${ROW_ICONS.external}`;
+    openButton.addEventListener('click', () => runProjectAction('Open', 'openProject', project.name));
+    actions.appendChild(openButton);
+    actions.appendChild(rowIconButton(ROW_ICONS.stop, `Stop ${project.name}`, () => runProjectAction('Stop', 'stopProject', project.name)));
+  } else {
+    const startButton = makeElement('button', 'btn-open');
+    startButton.type = 'button';
+    startButton.innerHTML = `${ROW_ICONS.play}<span>Start</span>`;
+    startButton.addEventListener('click', () => startFromList(project.name));
+    actions.appendChild(startButton);
+  }
+  const terminal = rowIconButton(ROW_ICONS.terminal, `Open terminal for ${project.name}`, () => openShell(project.name, shellService(project)));
+  terminal.disabled = !running;
+  actions.append(terminal, moreButton(project));
+  actions.appendChild(rowIconButton(ROW_ICONS.trash, `Delete ${project.name}`, () => startDeleteProject(project.name), 'danger-hover'));
+  actionsCell.appendChild(actions);
+
+  row.append(checkCell, nameCell, stackCell, statusCellTd, portsCell, sinceCell, actionsCell);
+  rows.push(row);
+
+  if (open) {
+    const list = containers.length
+      ? containers
+      : project.services.map((service) => ({ service, name: dockerName(project.name, service), image: '', state: 'not created', status: '' }));
+    for (const c of list) rows.push(containerChildRow(project, c));
+  }
+
   if (notes.has(project.name)) {
+    const noteRow = makeElement('tr', 'note-row');
+    const cell = td();
+    cell.colSpan = 7;
     const box = makeElement('div', 'note-box');
     box.setAttribute('role', 'status');
-    card.insertBefore(box, foot);
+    cell.appendChild(box);
+    noteRow.appendChild(cell);
+    rows.push(noteRow);
     paintNote(box, project.name);
   }
-  return card;
+  return rows;
 }
 
-// Counts for the stat tiles, the filter buttons and the sidebar.
+// Kept for the code that still asks for one card per project.
+function buildProjectCard(project) {
+  const frag = document.createDocumentFragment();
+  for (const row of buildProjectRows(project)) frag.appendChild(row);
+  return frag;
+}
+
+// Counts for the overview cards, the filter buttons, the sidebar and the status bar.
 function renderProjectCounts(list) {
   const counts = { running: 0, partly: 0, stopped: 0 };
   for (const project of list) {
     const key = counts[project.state] !== undefined ? project.state : 'stopped';
     counts[key] += 1;
   }
+  const containers = (projectsView.containers || []).filter((c) => c.project);
+  const up = containers.filter((c) => c.state === 'running').length;
   setText('stat-total', String(list.length));
   setText('stat-running', String(counts.running));
   setText('stat-partly', String(counts.partly));
   setText('stat-stopped', String(counts.stopped));
+  let stacksNote = '';
+  if (list.length && counts.running === list.length) stacksNote = 'all running';
+  else if (list.length && counts.stopped === list.length) stacksNote = 'all stopped';
+  setText('ovc-stacks-note', stacksNote);
+  byId('ovc-stacks-note').className = `note ${counts.running === list.length ? 'ok' : ''}`;
+  const bar = byId('ovc-stacks-bar');
+  bar.textContent = '';
+  for (const key of ['running', 'partly', 'stopped']) {
+    if (!counts[key]) continue;
+    const part = makeElement('span', `bar-${key}`);
+    part.style.setProperty('--w', String(counts[key]));
+    bar.appendChild(part);
+  }
+  setText('ovc-up', String(up));
+  setText('ovc-total', String(containers.length));
+  setText('ovc-containers-note', containers.length && up === containers.length ? 'healthy' : containers.length ? `${containers.length - up} stopped` : '');
+  byId('ovc-containers-note').className = `note ${containers.length && up === containers.length ? 'ok' : 'warn'}`;
+  const health = byId('ovc-health');
+  health.textContent = '';
+  health.setAttribute('aria-label', `${up} of ${containers.length} containers running`);
+  for (const c of containers) {
+    const cell = makeElement('span', c.state === 'running' ? 'on' : 'off');
+    cell.title = `${c.name}: ${c.status || c.state}`;
+    health.appendChild(cell);
+  }
+
+  const ports = [];
+  for (const project of list) for (const port of project.ports) ports.push({ project, port });
+  setText('ovc-ports', String(ports.length));
+  const chips = byId('ovc-port-chips');
+  chips.textContent = '';
+  for (const { project, port } of ports) chips.appendChild(openPortLink(project, port, `:${port.host}`)).classList.add('chip');
+
   setText('nav-count', String(list.length));
+  setText('nav-ccount', String(containers.length));
+  setText('sb-stacks', `stacks ${list.length} · containers ${up}/${containers.length}`);
   setText('filter-all', `All ${list.length}`);
   setText('filter-active', `Active ${counts.running + counts.partly}`);
   setText('filter-stopped', `Stopped ${counts.stopped}`);
+  setText('ptable-foot', `Showing ${list.length} project${list.length === 1 ? '' : 's'} · ${containers.length} container${containers.length === 1 ? '' : 's'}`);
+  renderEndpoints(list);
+  renderEvents(list);
+}
+
+function renderEndpoints(list) {
+  const box = byId('endpoint-list');
+  box.textContent = '';
+  let count = 0;
+  for (const project of list) {
+    for (const port of project.ports) {
+      const li = makeElement('li', '');
+      const where = makeElement('span', 'ep-where');
+      where.textContent = `${project.name} `;
+      const service = makeElement('span', 'muted');
+      service.textContent = `/ ${port.service === 'nginx' || port.service === project.ports[0].service ? 'web' : port.service}`;
+      where.appendChild(service);
+      li.append(where, openPortLink(project, port, `localhost:${port.host}`));
+      box.appendChild(li);
+      count += 1;
+    }
+  }
+  setText('endpoint-count', String(count));
+  if (!count) {
+    const li = makeElement('li', 'muted');
+    li.textContent = 'No published ports yet.';
+    box.appendChild(li);
+  }
+}
+
+// ---------- Events: what Docker reported while the window was open, then the state of each stack ----------
+
+const liveEvents = [];
+const LIVE_EVENTS_MAX = 30;
+const EVENT_WORDS = { start: 'started', stop: 'stopped', die: 'exited', kill: 'killed', restart: 'restarted', create: 'created', destroy: 'removed', pause: 'paused', unpause: 'resumed' };
+
+function rememberEvent(change) {
+  if (!change || !change.project) return;
+  liveEvents.unshift({ ...change, at: Date.now() });
+  if (liveEvents.length > LIVE_EVENTS_MAX) liveEvents.length = LIVE_EVENTS_MAX;
+}
+
+function eventRow(level, source, message, age) {
+  const li = makeElement('li', '');
+  const dot = makeElement('span', `ev-dot ev-${level}`);
+  dot.setAttribute('aria-hidden', 'true');
+  const src = makeElement('span', 'ev-src');
+  src.textContent = source;
+  const msg = makeElement('span', 'ev-msg');
+  msg.textContent = message;
+  const when = makeElement('span', 'ev-age');
+  when.textContent = age;
+  li.append(dot, src, msg, when);
+  return li;
+}
+
+function renderEvents(list) {
+  const box = byId('event-list');
+  if (!box) return;
+  box.textContent = '';
+  const rows = [];
+  for (const ev of liveEvents.slice(0, 8)) {
+    const level = ['start', 'restart', 'create', 'unpause'].includes(ev.action) ? 'ok' : ev.action === 'die' || ev.action === 'kill' ? 'warn' : 'off';
+    const minutes = (Date.now() - ev.at) / 60000;
+    rows.push(eventRow(level, ev.service ? `${ev.project}/${ev.service}` : ev.project, EVENT_WORDS[ev.action] || ev.action, agoText(minutes, true)));
+  }
+  for (const project of list) {
+    const containers = containersOf(project.name);
+    const up = containers.filter((c) => c.state === 'running');
+    const times = up.map((c) => upMinutes(c.status)).filter((m) => m !== null);
+    const age = times.length ? agoText(Math.max(...times), true) : '—';
+    if (up.length && up.length === containers.length) {
+      rows.push(eventRow('ok', project.name, `stack started · ${containers.length} container${containers.length === 1 ? '' : 's'}`, age));
+    } else if (up.length) {
+      rows.push(eventRow('warn', project.name, `partly running · ${up.length} of ${containers.length} containers`, age));
+    } else {
+      rows.push(eventRow('off', project.name, containers.length ? 'stack stopped' : 'not started yet', '—'));
+    }
+    for (const c of containers) {
+      if (c.state !== 'running' && up.length) rows.push(eventRow('warn', `${project.name}/${c.service || c.name}`, c.status || c.state, '—'));
+    }
+  }
+  for (const row of rows.slice(0, 8)) box.appendChild(row);
+  if (!rows.length) box.appendChild(eventRow('off', 'docker', 'No events yet', ''));
+}
+
+function emptyTableRow(content) {
+  const row = makeElement('tr', 'empty-row');
+  const cell = td();
+  cell.colSpan = 7;
+  cell.appendChild(content);
+  row.appendChild(cell);
+  return row;
 }
 
 function renderProjects() {
   const { list, filter, query } = projectsView;
   const needle = query.trim().toLowerCase();
+  const onlyRunning = byId('only-running').checked;
+  if (!expandedSeeded && list.length) {
+    expandedSeeded = true;
+    expandedProjects.add(list[0].name);
+  }
   renderProjectCounts(list);
 
   const shown = list.filter((project) => {
     if (filter === 'active' && !isActiveProject(project)) return false;
     if (filter === 'stopped' && isActiveProject(project)) return false;
-    if (needle && !`${project.name} ${project.label}`.toLowerCase().includes(needle)) return false;
+    if (onlyRunning && project.state !== 'running') return false;
+    const containerText = containersOf(project.name).map((c) => `${c.name} ${c.image}`).join(' ');
+    const haystack = `${project.name} ${project.label} ${project.ports.map((p) => p.host).join(' ')} ${containerText}`.toLowerCase();
+    if (needle && !haystack.includes(needle)) return false;
     return true;
   });
 
   el.projectList.textContent = '';
   if (list.length === 0) {
-    const empty = makeElement('div', 'empty empty-hero');
-    const art = makeElement('img', 'empty-art');
-    art.src = 'assets/empty-projects.png';
-    art.alt = '';
+    const empty = makeElement('div', 'empty-hero');
     const title = makeElement('strong', '');
     title.textContent = 'No projects yet';
     const text = makeElement('p', 'muted');
     text.textContent = 'Make your first project and everything it needs runs in Docker.';
     const make = addButton(empty, '+ New project', () => el.newProjectBtn.click());
     make.classList.add('primary');
-    empty.prepend(art, title, text);
-    el.projectList.appendChild(empty);
+    empty.prepend(title, text);
+    el.projectList.appendChild(emptyTableRow(empty));
     return;
   }
   if (shown.length === 0) {
-    const empty = makeElement('div', 'empty');
+    const empty = makeElement('p', 'muted');
     empty.textContent = 'No project matches this filter or search.';
-    el.projectList.appendChild(empty);
+    el.projectList.appendChild(emptyTableRow(empty));
     return;
   }
   for (const project of shown) {
-    el.projectList.appendChild(buildProjectCard(project));
+    for (const row of buildProjectRows(project)) el.projectList.appendChild(row);
   }
 }
 
-// Placeholder cards and a spinner while the project list is read for the first time.
+// A spinner in the table while the project list is read for the first time.
 function renderProjectsLoading() {
   for (const id of ['stat-total', 'stat-running', 'stat-partly', 'stat-stopped', 'nav-count']) {
     setText(id, '–');
@@ -1528,26 +1997,12 @@ function renderProjectsLoading() {
   const text = makeElement('span', '');
   text.textContent = 'Loading projects...';
   note.append(spinner, text);
-  el.projectList.appendChild(note);
-  for (let i = 0; i < 3; i += 1) {
-    const card = makeElement('div', 'pcard pcard-skel');
-    const head = makeElement('div', 'pcard-head');
-    const mark = makeElement('div', 'skeleton skel-mark');
-    const title = makeElement('div', 'pcard-title');
-    title.append(makeElement('div', 'skeleton skel-short'), makeElement('div', 'skeleton skel-line'));
-    head.append(mark, title);
-    const body = makeElement('div', 'pcard-body');
-    body.appendChild(makeElement('div', 'skeleton skel-line'));
-    const foot = makeElement('div', 'pcard-foot');
-    foot.appendChild(makeElement('div', 'skeleton skel-row'));
-    card.append(head, body, foot);
-    el.projectList.appendChild(card);
-  }
+  el.projectList.appendChild(emptyTableRow(note));
 }
 
 function renderProjectsError(err) {
   el.projectList.textContent = '';
-  const box = makeElement('div', 'empty');
+  const box = makeElement('div', 'empty-hero');
   const text = makeElement('p', 'error');
   text.textContent = `Could not load the projects: ${ipcMessage(err)}`;
   const retry = addButton(box, 'Try again', () => {
@@ -1556,12 +2011,20 @@ function renderProjectsError(err) {
   });
   retry.classList.add('primary');
   box.prepend(text);
-  el.projectList.appendChild(box);
+  el.projectList.appendChild(emptyTableRow(box));
 }
 
 async function loadProjects() {
   try {
-    projectsView.list = await window.envhub.listProjects();
+    const [list, containers] = await Promise.all([
+      window.envhub.listProjects(),
+      window.envhub.listContainers().catch(() => []),
+    ]);
+    projectsView.list = list;
+    projectsView.containers = containers;
+    // The Containers page shows ports from the project list, so it is drawn again with the new list.
+    containersView.items = containers;
+    renderContainers();
   } catch (err) {
     renderProjectsError(err);
     return;
@@ -1594,7 +2057,7 @@ function backToProjects() {
 }
 
 function highlightProjectCard(name) {
-  const card = [...document.querySelectorAll('.pcard')].find((c) => c.dataset.project === name);
+  const card = [...document.querySelectorAll('tr.parent')].find((c) => c.dataset.project === name);
   if (!card) return;
   const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   card.scrollIntoView({ block: 'center', behavior: calm ? 'auto' : 'smooth' });
@@ -1606,7 +2069,10 @@ function highlightProjectCard(name) {
 
 function showView(view) {
   document.body.dataset.view = view;
-  if (view !== 'detail') stopOverviewRefresh();
+  if (view !== 'detail') {
+    stopOverviewRefresh();
+    stopLogView();
+  }
   const current = view === 'detail' ? 'projects' : view;
   for (const item of document.querySelectorAll('.nav-item[data-view]')) {
     if (item.dataset.view === current) {
@@ -1619,9 +2085,14 @@ function showView(view) {
 
 const THEMES = ['system', 'light', 'dark'];
 
+// The prefix of every Docker name (naming.json in the project root), for example envhub-shop-php.
+let NAME_PREFIX = 'envhub';
+const dockerName = (project, service) => `${NAME_PREFIX}-${project}${service ? `-${service}` : ''}`;
+const themeKey = () => `${NAME_PREFIX}-theme`;
+
 function readTheme() {
   try {
-    const saved = localStorage.getItem('envhub-theme');
+    const saved = localStorage.getItem(themeKey());
     return THEMES.includes(saved) ? saved : 'system';
   } catch (err) {
     return 'system';
@@ -1634,11 +2105,11 @@ function applyTheme(theme) {
   } else {
     document.documentElement.dataset.theme = theme;
   }
-  for (const button of document.querySelectorAll('[data-theme-choice]')) {
-    button.setAttribute('aria-pressed', button.dataset.themeChoice === theme ? 'true' : 'false');
+  for (const radio of document.querySelectorAll('[data-theme-choice]')) {
+    radio.checked = radio.dataset.themeChoice === theme;
   }
   try {
-    localStorage.setItem('envhub-theme', theme);
+    localStorage.setItem(themeKey(), theme);
   } catch (err) {
     // Storage can be blocked. The theme still works for this session.
   }
@@ -1658,6 +2129,32 @@ function bindProjectsPage() {
   byId('filter-all').addEventListener('click', () => setFilter('all'));
   byId('filter-active').addEventListener('click', () => setFilter('active'));
   byId('filter-stopped').addEventListener('click', () => setFilter('stopped'));
+  byId('only-running').addEventListener('change', renderProjects);
+  byId('select-all-projects').addEventListener('change', (event) => {
+    selectedProjects.clear();
+    if (event.target.checked) for (const project of projectsView.list) selectedProjects.add(project.name);
+    renderProjects();
+  });
+  byId('tb-settings').addEventListener('click', () => byId('nav-settings').click());
+  const globalSearch = byId('global-search');
+  globalSearch.addEventListener('input', () => {
+    if (document.body.dataset.view === 'system') {
+      containersView.query = globalSearch.value;
+      renderContainers();
+      return;
+    }
+    if (document.body.dataset.view !== 'projects') showView('projects');
+    projectsView.query = globalSearch.value;
+    byId('project-search').value = globalSearch.value;
+    renderProjects();
+  });
+  document.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      globalSearch.focus();
+      globalSearch.select();
+    }
+  });
   byId('project-search').addEventListener('input', (event) => {
     projectsView.query = event.target.value;
     renderProjects();
@@ -1667,22 +2164,24 @@ function bindProjectsPage() {
     showView('settings');
     loadProjectsDir();
   });
-  for (const button of document.querySelectorAll('[data-theme-choice]')) {
-    button.addEventListener('click', () => applyTheme(button.dataset.themeChoice));
-  }
+  bindSettingsPage();
   byId('settings-change-dir').addEventListener('click', () => changeProjectsDir(false));
   byId('settings-reset-dir').addEventListener('click', () => changeProjectsDir(true));
   byId('settings-versions-btn').addEventListener('click', openVersionsFile);
 
   byId('detail-back').addEventListener('click', backToProjects);
+  byId('np-crumb-projects').addEventListener('click', hideCreateCard);
+  byId('np-cancel').addEventListener('click', hideCreateCard);
   byId('detail-primary').addEventListener('click', detailPrimary);
   byId('detail-stop').addEventListener('click', () => runProjectAction('Stop', 'stopProject', detailState.name));
   byId('detail-restart').addEventListener('click', () => runProjectAction('Restart', 'restartProject', detailState.name));
+  byId('detail-delete').addEventListener('click', () => startDeleteProject(detailState.name));
+  byId('edit-delete').addEventListener('click', () => startDeleteProject(editState.name || detailState.name));
   for (const tab of document.querySelectorAll('.tab[data-tab]')) {
     tab.addEventListener('click', () => setDetailTab(tab.dataset.tab));
   }
   byId('detail-url').addEventListener('click', () => runProjectAction('Open', 'openProject', detailState.name));
-  byId('detail-lan-url').addEventListener('click', (event) => copyWithFeedback(event.currentTarget.textContent, event.currentTarget));
+  byId('detail-lan-url').addEventListener('click', (event) => copyWithFeedback(event.currentTarget.dataset.url || event.currentTarget.textContent, event.currentTarget));
   byId('detail-terminal').addEventListener('click', () => {
     const service = defaultShellService();
     if (service) {
@@ -1752,27 +2251,27 @@ function renderDetail() {
   }
   const state = STATUS_TEXT[project.state] ? project.state : 'stopped';
   const running = state !== 'stopped';
-  const mark = STACK_MARKS[project.stack] || { text: project.name.slice(0, 2), color: '#64748B' };
-  const markBox = byId('detail-mark');
-  markBox.textContent = mark.text;
-  markBox.style.setProperty('--brand', mark.color);
+  setText('detail-crumb', project.name);
+  setText('detail-eyebrow', `stack / ${dockerName(project.name)}`);
   setText('detail-name', project.name);
   setText('detail-stack', project.label);
-  const status = byId('detail-status');
-  status.className = `status status-${state}`;
-  status.textContent = `● ${STATUS_TEXT[state]}`;
+  byId('detail-status').dataset.state = state;
+  setText('detail-status-text', STATUS_TEXT[state]);
+  if (!running) setText('detail-uptime', '');
   const url = byId('detail-url');
   url.hidden = project.ports.length === 0;
-  url.textContent = project.ports.length ? `http://localhost:${project.ports[0].host}` : '';
+  url.textContent = project.ports.length ? `localhost:${project.ports[0].host}` : '';
+  if (project.ports.length) url.appendChild(icon('external'));
   setIconLabel(byId('detail-primary'), running ? 'external' : 'play', running ? 'Open site' : 'Start');
   byId('detail-stop').hidden = !running;
+  byId('detail-terminal').disabled = !running;
   document.querySelector('.tab[data-tab="settings"]').hidden = !project.editable;
   paintNote(byId('detail-note'), project.name);
 }
 
 // ---------- Details: overview data ----------
 
-const overviewState = { name: '', links: null, containers: [], logs: '', details: null, stats: null, disk: null, diskAt: 0 };
+const overviewState = { name: '', links: null, containers: [], logs: '', details: null, stats: null, disk: null, diskAt: 0, volumes: null };
 // What was last read for each project (services, containers, logs, settings form, numbers).
 // Opening a project shows this at once while the new numbers load. It is replaced after every read, and dropped
 // when the project changes: settings saved, a service started or stopped, a container started or stopped, deleted.
@@ -1847,6 +2346,7 @@ async function readOverview(name, before) {
     window.envhub.projectDetails(name),
     window.envhub.projectStats(name),
     diskDue ? window.envhub.projectDisk(name) : Promise.resolve(known.disk),
+    diskDue || !known.volumes ? window.envhub.projectVolumes(name) : Promise.resolve(known.volumes),
   ]);
   const value = (r) => (r.status === 'fulfilled' ? r.value : null);
   return {
@@ -1858,7 +2358,21 @@ async function readOverview(name, before) {
     stats: value(results[4]),
     disk: diskDue ? value(results[5]) : known.disk,
     diskAt: diskDue ? Date.now() : known.diskAt,
+    volumes: value(results[6]),
   };
+}
+
+// CPU and memory of the last 15 minutes, per project, for the sparklines. Sampled while the page is open.
+const statsHistory = new Map();
+const HISTORY_MS = 15 * 60 * 1000;
+
+function recordStats(name, stats) {
+  if (!name || !stats) return;
+  const list = statsHistory.get(name) || [];
+  const now = Date.now();
+  list.push({ at: now, cpu: Number(stats.cpuPercent) || 0, mem: Number(stats.memBytes) || 0 });
+  while (list.length && now - list[0].at > HISTORY_MS) list.shift();
+  statsHistory.set(name, list);
 }
 
 async function loadOverviewData(name) {
@@ -1867,6 +2381,7 @@ async function loadOverviewData(name) {
   const snapshot = await readOverview(name, overviewState);
   if (detailState.name !== name || document.body.dataset.view !== 'detail') return;
   Object.assign(overviewState, snapshot);
+  recordStats(name, snapshot.stats);
   rememberOverview();
   const project = projectsView.list.find((p) => p.name === name);
   if (project) renderOverview(project);
@@ -1892,30 +2407,159 @@ function defaultShellService() {
   const services = links ? links.services : [];
   const byContainer = new Map(overviewState.containers.map((c) => [c.name, c]));
   const up = (svc) => (byContainer.get(svc.container) || {}).state === 'running';
+  // The app code lives in php / app; nginx only serves it.
+  const preferred = project ? shellService(project) : null;
+  const pick = services.find((svc) => svc.name === preferred && up(svc));
+  if (pick) return pick.name;
   const main = project && project.ports[0] ? project.ports[0].service : null;
   const mainService = services.find((svc) => svc.name === main && up(svc));
   return mainService ? mainService.name : (services.find(up) || {}).name || null;
 }
 
-// Placeholder shown until the first numbers of a project arrive (spinner plus grey bars).
-function skeletonCard(rows) {
-  const card = makeElement('section', 'ov-card');
-  card.appendChild(makeElement('div', 'skeleton skel-short'));
-  for (let i = 0; i < rows; i += 1) {
-    card.appendChild(makeElement('div', 'skeleton skel-row'));
-  }
+// ---------- Details: drawing ----------
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// A small line chart of the last 15 minutes. Flat when there is only one sample yet.
+function sparkline(values, color) {
+  const width = 240;
+  const height = 46;
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('class', 'spark');
+  svg.setAttribute('aria-hidden', 'true');
+  const list = values.length ? values : [0];
+  const series = list.length === 1 ? [list[0], list[0]] : list;
+  const max = Math.max(...series) || 1;
+  const min = Math.min(...series);
+  const span = max - min || max || 1;
+  const points = series.map((v, i) => {
+    const x = (i / (series.length - 1)) * width;
+    const y = height - 4 - ((v - min) / span) * (height - 10);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const area = document.createElementNS(SVG_NS, 'polygon');
+  area.setAttribute('points', `0,${height} ${points.join(' ')} ${width},${height}`);
+  area.setAttribute('fill', color);
+  area.setAttribute('fill-opacity', '0.12');
+  const line = document.createElementNS(SVG_NS, 'polyline');
+  line.setAttribute('points', points.join(' '));
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke', color);
+  line.setAttribute('stroke-width', '1.6');
+  line.setAttribute('vector-effect', 'non-scaling-stroke');
+  svg.append(area, line);
+  return svg;
+}
+
+function usageCard(label, value) {
+  const card = makeElement('div', 'uc');
+  const head = makeElement('div', 'uc-head');
+  const name = makeElement('span', 'uc-label');
+  name.textContent = label;
+  const number = makeElement('span', 'uc-value');
+  if (value instanceof Node) number.appendChild(value);
+  else number.textContent = value;
+  head.append(name, number);
+  card.appendChild(head);
   return card;
+}
+
+function shortService(name) {
+  if (name === 'phpmyadmin') return 'pma';
+  return name.length > 8 ? name.slice(0, 7) : name;
+}
+
+const DISK_COLORS = ['#6EA8FF', '#E3B341', '#A78BFA', '#22D3EE', '#56D364'];
+
+function volumeLabel(volume) {
+  if (volume.label) return volume.label;
+  const name = volume.name || '';
+  if (/-data$/.test(name)) return 'Database data';
+  if (/vendor/.test(name)) return 'Installed packages';
+  if (/node_modules|-node$/.test(name)) return 'Node packages';
+  return 'Docker volume';
+}
+
+function renderUsage(project, services, runningOf) {
+  const fresh = overviewState.name === project.name;
+  const liveStats = fresh && overviewState.stats ? overviewState.stats : null;
+  const disk = fresh && overviewState.disk ? overviewState.disk : null;
+  const history = statsHistory.get(project.name) || [];
+  const box = byId('detail-stats');
+  box.textContent = '';
+
+  const cpu = usageCard('CPU', liveStats ? `${liveStats.cpuPercent.toFixed(1)}%` : '–');
+  cpu.appendChild(sparkline(history.map((h) => h.cpu), '#22D3EE'));
+  const cpuFoot = makeElement('span', 'uc-foot');
+  cpuFoot.textContent = 'last 15 min';
+  cpu.appendChild(cpuFoot);
+
+  const mem = usageCard('Memory', liveStats ? formatBytes(liveStats.memBytes) : '–');
+  mem.appendChild(sparkline(history.map((h) => h.mem), '#A78BFA'));
+  const memFoot = makeElement('span', 'uc-foot');
+  memFoot.textContent = 'last 15 min';
+  mem.appendChild(memFoot);
+
+  const diskCard = usageCard('Disk', disk ? formatBytes(disk.bytes) : '–');
+  const bar = makeElement('div', 'uc-split');
+  const legend = makeElement('div', 'uc-legend');
+  const vols = disk ? disk.volumes.filter((v) => v.bytes > 0) : [];
+  vols.forEach((v, i) => {
+    const color = DISK_COLORS[i % DISK_COLORS.length];
+    const part = makeElement('span', '');
+    part.style.setProperty('--w', String(v.bytes));
+    part.style.setProperty('--c', color);
+    bar.appendChild(part);
+    const item = makeElement('span', '');
+    const swatch = makeElement('span', 'sw');
+    swatch.style.setProperty('--c', color);
+    swatch.textContent = '■';
+    item.append(swatch, ` ${v.name.replace(`${dockerName(project.name)}-`, '')} ${formatBytes(v.bytes)}`);
+    legend.appendChild(item);
+  });
+  if (!vols.length) {
+    const none = makeElement('span', '');
+    none.textContent = disk ? 'No volume data yet' : 'Reading sizes...';
+    legend.appendChild(none);
+  }
+  diskCard.append(bar, legend);
+
+  const up = services.filter(runningOf).length;
+  const value = makeElement('span', '');
+  value.textContent = services.length ? String(up) : '–';
+  if (services.length) {
+    const of = makeElement('span', 'of');
+    of.textContent = `/${services.length}`;
+    value.appendChild(of);
+  }
+  const boxes = usageCard('Containers', value);
+  const grid = makeElement('div', 'uc-boxes');
+  grid.setAttribute('role', 'img');
+  grid.setAttribute('aria-label', `${up} of ${services.length} running`);
+  for (const svc of services) {
+    const cell = makeElement('div', '');
+    const block = makeElement('span', runningOf(svc) ? 'on' : 'off');
+    block.title = `${svc.name}: ${runningOf(svc) ? 'running' : 'stopped'}`;
+    const label = makeElement('span', 'mono');
+    label.textContent = shortService(svc.name);
+    cell.append(block, label);
+    grid.appendChild(cell);
+  }
+  boxes.appendChild(grid);
+
+  box.append(cpu, mem, diskCard, boxes);
 }
 
 function renderOverviewLoading() {
   const stats = byId('detail-stats');
   stats.textContent = '';
-  for (let i = 0; i < 4; i += 1) {
-    const tile = makeElement('div', 'stat stat-wide');
-    tile.append(makeElement('div', 'skeleton skel-short'), makeElement('div', 'skeleton skel-line'));
-    stats.appendChild(tile);
+  for (const label of ['CPU', 'Memory', 'Disk', 'Containers']) {
+    const card = usageCard(label, '–');
+    card.appendChild(makeElement('div', 'skeleton skel-line'));
+    stats.appendChild(card);
   }
-
   const box = byId('detail-overview');
   box.textContent = '';
   const note = makeElement('div', 'loading-note');
@@ -1925,36 +2569,339 @@ function renderOverviewLoading() {
   const text = makeElement('span', '');
   text.textContent = 'Loading project details...';
   note.append(spinner, text);
-  const main = makeElement('div', 'ov-col');
-  main.append(skeletonCard(4), skeletonCard(2));
-  const side = makeElement('div', 'ov-col');
-  side.append(skeletonCard(3), skeletonCard(3));
-  box.append(note, main, side);
+  box.appendChild(note);
 }
 
-function overviewTile(value, label, percent = null) {
-  const tile = makeElement('div', 'stat stat-wide');
-  const text = makeElement('span', 'stat-text');
-  const strong = makeElement('span', 'stat-value');
-  strong.textContent = value;
-  const caption = makeElement('span', 'stat-label');
-  caption.textContent = label;
-  text.append(strong, document.createElement('br'), caption);
-  tile.appendChild(text);
-  if (percent !== null) {
-    const track = makeElement('div', 'track stat-bar');
-    const fill = makeElement('div', 'fill');
-    fill.style.width = `${Math.max(0, Math.min(100, percent))}%`;
-    track.appendChild(fill);
-    tile.appendChild(track);
+function panel(title, extra) {
+  const section = makeElement('section', 'panel');
+  const head = makeElement('div', 'panel-head');
+  const heading = makeElement('h2', 'panel-title');
+  heading.textContent = title;
+  if (extra) {
+    const more = makeElement('span', 'panel-title-extra');
+    more.textContent = ` · ${extra}`;
+    heading.appendChild(more);
   }
-  return tile;
+  head.appendChild(heading);
+  section.appendChild(head);
+  return { section, head, heading };
+}
+
+function kvList(rows) {
+  const list = makeElement('dl', 'kv');
+  for (const [label, value, mono = true] of rows) {
+    const dt = makeElement('dt', '');
+    dt.textContent = label;
+    const dd = makeElement('dd', mono ? 'mono' : '');
+    if (value instanceof Node) dd.appendChild(value);
+    else dd.textContent = value;
+    list.append(dt, dd);
+  }
+  return list;
+}
+
+// ---------- Logs: split by container, coloured by service, in time order ----------
+
+// The same colour for a service everywhere (overview, Logs tab, chips).
+const SERVICE_COLORS = {
+  nginx: '#8FD18C', php: '#D7A8FF', app: '#8FD18C', node: '#8FD18C', web: '#8FD18C',
+  mysql: '#7FB4FF', mariadb: '#7FB4FF', postgres: '#7FB4FF', mongodb: '#7DD3C0',
+  phpmyadmin: '#F5C46B', adminer: '#F5C46B', redis: '#F0A6CA', mailpit: '#7DD3C0',
+};
+const LOG_COLORS = ['#7FB4FF', '#8FD18C', '#D7A8FF', '#F0A6CA', '#7DD3C0', '#F5C46B'];
+
+function serviceColor(name, names = []) {
+  if (SERVICE_COLORS[name]) return SERVICE_COLORS[name];
+  const at = Math.max(0, names.indexOf(name));
+  return LOG_COLORS[at % LOG_COLORS.length];
+}
+
+let overviewLogFilter = 'all';
+
+// projectLogs returns "== <id> ==" and then the lines of that container, each starting with Docker's timestamp.
+// The result is one list for all containers, oldest first.
+function parseLogs(text, containers) {
+  const byShortId = new Map(containers.map((c) => [String(c.id || '').slice(0, 12), c]));
+  const lines = [];
+  let service = '';
+  let order = 0;
+  for (const raw of String(text || '').split('\n')) {
+    const head = /^== ([0-9a-f]{12}) ==$/.exec(raw.trim());
+    if (head) {
+      const c = byShortId.get(head[1]);
+      service = c ? c.service || c.name : head[1];
+      continue;
+    }
+    if (!raw.trim()) continue;
+    const stamp = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s?(.*)$/.exec(raw);
+    const at = stamp ? Date.parse(stamp[1]) : NaN;
+    lines.push({ service, text: stamp ? stamp[2] : raw, at: Number.isNaN(at) ? null : at, order: order++ });
+  }
+  // Lines without a time keep their place after the timed ones of their container.
+  return lines.sort((a, b) => {
+    if (a.at !== null && b.at !== null && a.at !== b.at) return a.at - b.at;
+    return a.order - b.order;
+  });
+}
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function clockText(at) {
+  const d = new Date(at);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+
+function dateTimeText(at) {
+  const d = new Date(at);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${clockText(at)}`;
+}
+
+// The time some images print again inside the line (mysql) is left out, the Docker time is shown instead.
+function logMessage(text) {
+  return text.replace(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z?\s+(\d+\s+)?/, '');
+}
+
+function logLevel(text) {
+  if (/\b(error|fatal|crit(ical)?|emerg)\b/i.test(text)) return 'err';
+  if (/\b(warn(ing)?)\b/i.test(text)) return 'warn';
+  return '';
+}
+
+function logLine(entry, names) {
+  const row = makeElement('div', `log-line ${logLevel(entry.text)}`.trim());
+  const svc = makeElement('span', 'log-svc');
+  svc.textContent = entry.service.padEnd(7, ' ');
+  svc.style.setProperty('--c', serviceColor(entry.service, names));
+  row.appendChild(svc);
+  if (entry.at !== null) {
+    const t = makeElement('span', 'log-time');
+    t.textContent = clockText(entry.at);
+    row.appendChild(t);
+  }
+  const msg = makeElement('span', 'log-msg');
+  msg.textContent = logMessage(entry.text);
+  row.appendChild(msg);
+  return row;
+}
+
+function logsPanel(project, services, live, lastLines = 40) {
+  const fresh = overviewState.name === project.name;
+  const entries = fresh ? parseLogs(overviewState.logs, overviewState.containers) : [];
+  const names = services.map((svc) => svc.name);
+  const p = panel('Logs');
+  p.section.classList.add('logs-panel');
+  const badge = makeElement('span', `live${live ? '' : ' off'}`);
+  const dot = makeElement('span', 'dot');
+  badge.append(dot, live ? 'Live' : 'Stopped');
+  const filterLabel = makeElement('label', 'mini-field push-right');
+  filterLabel.append('Service');
+  const select = document.createElement('select');
+  for (const value of ['all', ...names]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value === 'all' ? 'All services' : value;
+    select.appendChild(option);
+  }
+  select.value = names.includes(overviewLogFilter) ? overviewLogFilter : 'all';
+  filterLabel.appendChild(select);
+  const term = makeElement('div', 'log-term');
+  const draw = () => {
+    term.textContent = '';
+    const shown = entries.filter((e) => select.value === 'all' || e.service === select.value).slice(-lastLines);
+    for (const entry of shown) term.appendChild(logLine(entry, names));
+    if (!shown.length) term.textContent = fresh ? 'No logs yet.' : 'Loading...';
+    term.scrollTop = term.scrollHeight;
+  };
+  select.addEventListener('change', () => {
+    overviewLogFilter = select.value;
+    draw();
+  });
+  const copy = addButton(p.head, 'Copy', (event) => copyWithFeedback(term.innerText, event.currentTarget));
+  copy.classList.add('btn-xs');
+  p.head.insertBefore(badge, copy);
+  p.head.insertBefore(filterLabel, copy);
+  p.head.classList.add('wrap');
+  p.section.appendChild(term);
+  draw();
+  return p.section;
+}
+
+// ---------- Logs tab: every line (last 500 per container), filters, follow ----------
+
+const logView = { name: '', entries: [], services: [], service: 'all', query: '', follow: true, timestamps: true, warnOnly: false, clearedAt: null, timer: null };
+const LOG_VIEW_REFRESH_MS = 4000;
+
+function stopLogView() {
+  clearTimeout(logView.timer);
+  logView.timer = null;
+}
+
+async function readLogView(name) {
+  const [text, containers] = await Promise.all([
+    window.envhub.projectLogs(name),
+    window.envhub.listContainers(name).catch(() => []),
+  ]);
+  if (logView.name !== name) return;
+  logView.entries = parseLogs(text, containers);
+  const project = projectsView.list.find((p) => p.name === name);
+  const order = project ? project.services : [];
+  const seen = new Set([...order.filter((s) => containers.some((c) => c.service === s)), ...containers.map((c) => c.service || c.name)]);
+  logView.services = [...seen];
+}
+
+function paintLogChips() {
+  const box = byId('lv-chips');
+  box.textContent = '';
+  for (const value of ['all', ...logView.services]) {
+    const chip = makeElement('button', 'chip-btn');
+    chip.type = 'button';
+    chip.setAttribute('aria-pressed', logView.service === value ? 'true' : 'false');
+    if (value !== 'all') {
+      const dot = makeElement('span', 'dot');
+      dot.style.setProperty('background', serviceColor(value, logView.services));
+      chip.appendChild(dot);
+    }
+    chip.append(value === 'all' ? 'All services' : value);
+    chip.addEventListener('click', () => {
+      logView.service = value;
+      paintLogChips();
+      paintLogView();
+    });
+    box.appendChild(chip);
+  }
+}
+
+function paintLogView() {
+  const body = byId('lv-body');
+  const needle = logView.query.trim().toLowerCase();
+  const shown = logView.entries.filter((e) => {
+    if (logView.clearedAt !== null && (e.at === null || e.at <= logView.clearedAt)) return false;
+    if (logView.service !== 'all' && e.service !== logView.service) return false;
+    if (logView.warnOnly && !logLevel(e.text)) return false;
+    if (needle && !`${e.service} ${e.text}`.toLowerCase().includes(needle)) return false;
+    return true;
+  });
+  const keepScroll = !logView.follow ? body.scrollTop : null;
+  body.textContent = '';
+  shown.forEach((entry, i) => {
+    const row = makeElement('div', `lv-line ${logLevel(entry.text)}`.trim());
+    const num = makeElement('span', 'lv-num');
+    num.textContent = String(i + 1);
+    row.appendChild(num);
+    if (logView.timestamps) {
+      const time = makeElement('span', 'lv-time');
+      time.textContent = entry.at !== null ? dateTimeText(entry.at) : '';
+      row.appendChild(time);
+    }
+    const svc = makeElement('span', 'lv-svc');
+    svc.textContent = entry.service;
+    svc.style.setProperty('--c', serviceColor(entry.service, logView.services));
+    const msg = makeElement('span', 'lv-msg');
+    msg.textContent = logMessage(entry.text);
+    row.append(svc, msg);
+    body.appendChild(row);
+  });
+  const cursor = makeElement('div', 'lv-line lv-cursor');
+  const num = makeElement('span', 'lv-num');
+  num.textContent = String(shown.length + 1);
+  const caret = makeElement('span', 'lv-caret');
+  caret.textContent = '▍';
+  cursor.append(num, caret);
+  body.appendChild(cursor);
+  if (!logView.entries.length) {
+    const empty = makeElement('div', 'lv-empty');
+    empty.textContent = 'No logs yet. Start the project to see its output.';
+    body.prepend(empty);
+  }
+  if (logView.follow) body.scrollTop = body.scrollHeight;
+  else if (keepScroll !== null) body.scrollTop = keepScroll;
+  const count = logView.services.length;
+  setText('lv-foot-left', `showing last 500 lines · ${count} service${count === 1 ? '' : 's'}${shown.length !== logView.entries.length ? ` · ${shown.length} match` : ''}`);
+  setText('lv-foot-right', logView.follow ? 'following · auto-scroll on' : 'paused · auto-scroll off');
+}
+
+async function refreshLogView() {
+  const name = logView.name;
+  if (!name) return;
+  stopLogView();
+  try {
+    await readLogView(name);
+    setText('lv-error', '');
+  } catch (err) {
+    setText('lv-error', `Could not load logs: ${ipcMessage(err)}`);
+  }
+  if (logView.name !== name) return;
+  paintLogChips();
+  paintLogView();
+  const project = projectsView.list.find((p) => p.name === name);
+  const live = Boolean(project && isRunningProject(project));
+  const badge = byId('lv-live');
+  badge.classList.toggle('off', !live);
+  byId('lv-live-text').textContent = live ? 'Live' : 'Stopped';
+  // Keep reading while the tab is open and the project runs.
+  if (live && document.body.dataset.view === 'detail' && detailState.tab === 'logs' && detailState.name === name) {
+    logView.timer = setTimeout(refreshLogView, LOG_VIEW_REFRESH_MS);
+  }
+}
+
+async function showLogs(name) {
+  if (logView.name !== name) {
+    Object.assign(logView, { name, entries: [], services: [], service: 'all', clearedAt: null });
+    byId('lv-filter').value = logView.query;
+  }
+  logsName = name;
+  ensureProjectsView();
+  mountPanel(el.logViewCard);
+  el.logViewCard.hidden = false;
+  byId('lv-body').textContent = 'Loading...';
+  await refreshLogView();
+}
+
+function bindLogView() {
+  byId('lv-filter').addEventListener('input', (event) => {
+    logView.query = event.target.value;
+    paintLogView();
+  });
+  byId('lv-follow').addEventListener('change', (event) => {
+    logView.follow = event.target.checked;
+    paintLogView();
+  });
+  byId('lv-ts').addEventListener('change', (event) => {
+    logView.timestamps = event.target.checked;
+    paintLogView();
+  });
+  byId('lv-warn').addEventListener('change', (event) => {
+    logView.warnOnly = event.target.checked;
+    paintLogView();
+  });
+  byId('lv-refresh').addEventListener('click', refreshLogView);
+  byId('lv-copy').addEventListener('click', (event) => {
+    const text = [...byId('lv-body').querySelectorAll('.lv-line:not(.lv-cursor)')].map((row) => [...row.children].slice(1).map((c) => c.textContent).join('  ')).join('\n');
+    copyWithFeedback(text, event.currentTarget);
+  });
+  byId('lv-clear').addEventListener('click', () => {
+    const last = logView.entries.filter((e) => e.at !== null).pop();
+    logView.clearedAt = last ? last.at : Date.now();
+    paintLogView();
+  });
+  // Scrolling up pauses following; scrolling back to the end turns it on again.
+  byId('lv-body').addEventListener('scroll', (event) => {
+    const body = event.currentTarget;
+    const atEnd = body.scrollHeight - body.scrollTop - body.clientHeight < 24;
+    if (atEnd !== logView.follow) {
+      logView.follow = atEnd;
+      byId('lv-follow').checked = atEnd;
+      setText('lv-foot-right', atEnd ? 'following · auto-scroll on' : 'paused · auto-scroll off');
+    }
+  });
 }
 
 function ovCard(title) {
-  const card = makeElement('section', 'ov-card');
-  const head = makeElement('div', 'ov-head');
-  const heading = makeElement('h3', 'ov-title');
+  const card = makeElement('section', 'panel padded');
+  const head = makeElement('div', 'panel-head');
+  const heading = makeElement('h2', 'panel-title');
   heading.textContent = title;
   head.appendChild(heading);
   card.appendChild(head);
@@ -1980,8 +2927,10 @@ function lanAddressOf(project, links) {
 }
 
 function showLanAddress(address) {
+  const button = byId('detail-lan-url');
   byId('detail-lan').hidden = !address;
-  byId('detail-lan-url').textContent = address;
+  button.textContent = address.replace(/^https?:\/\//, '');
+  button.dataset.url = address;
 }
 
 // Who can open the project, in three levels, plus a button that finds out why another computer cannot.
@@ -2058,142 +3007,153 @@ function renderOverview(project) {
   const firstUp = fresh ? overviewState.containers.find((c) => c.state === 'running') : null;
   setText('detail-uptime', firstUp ? firstUp.status : '');
   showLanAddress(fresh ? lanAddressOf(project, links) : '');
-
-  const liveStats = fresh && overviewState.stats ? overviewState.stats : null;
-  const disk = fresh && overviewState.disk ? overviewState.disk : null;
-  const stats = byId('detail-stats');
-  stats.textContent = '';
-  stats.append(
-    overviewTile(liveStats ? `${liveStats.cpuPercent.toFixed(1)}%` : '–', 'CPU', liveStats ? liveStats.cpuPercent : null),
-    overviewTile(liveStats ? formatBytes(liveStats.memBytes) : '–', 'Memory', liveStats ? liveStats.memPercent : null),
-    overviewTile(disk ? formatBytes(disk.bytes) : '–', disk ? `Disk (${disk.volumes.length} ${disk.volumes.length === 1 ? 'volume' : 'volumes'})` : 'Disk (volumes)'),
-    overviewTile(fresh && links ? `${runningNow} / ${services.length}` : '–', 'Containers running'),
-  );
+  renderUsage(project, services, serviceRunning);
 
   box.textContent = '';
-  const main = makeElement('div', 'ov-col');
-  const side = makeElement('div', 'ov-col');
+  const main = makeElement('div', 'ov-main');
+  const side = makeElement('aside', 'ov-side');
 
   // Services
-  const svc = ovCard(links ? `Services · ${runningNow} of ${services.length} running` : 'Services');
-  if (!links) {
-    const note = makeElement('p', 'pcard-note');
-    note.textContent = fresh ? 'Could not read the services. Check that Docker is running.' : 'Loading...';
-    svc.card.appendChild(note);
-  } else if (services.length === 0) {
-    const note = makeElement('p', 'pcard-note');
-    note.textContent = 'This project has no containers yet.';
-    svc.card.appendChild(note);
+  const svc = panel('Services', links ? `${runningNow} of ${services.length} running` : '');
+  const refresh = addButton(svc.head, 'Refresh', () => loadOverviewData(project.name));
+  refresh.classList.add('btn-xs');
+  if (!links || services.length === 0) {
+    const note = makeElement('p', 'panel-note');
+    note.textContent = !links ? (fresh ? 'Could not read the services. Check that Docker is running.' : 'Loading...') : 'This project has no containers yet.';
+    svc.section.appendChild(note);
   } else {
-    for (const item of services) {
-      const row = makeElement('div', 'svc-row');
-      const badgeMark = makeElement('span', 'svc-mark');
-      badgeMark.textContent = item.name.slice(0, 2);
-      const info = makeElement('div', 'svc-info');
-      const title = makeElement('strong', '');
-      title.textContent = item.name;
-      const image = makeElement('span', 'svc-image');
-      image.textContent = item.image;
-      info.append(title, image);
-      const port = item.ports[0];
-      const portText = makeElement('span', 'svc-port');
-      portText.textContent = port ? `:${port.host}` : 'internal';
-      const up = serviceRunning(item);
-      const pill = makeElement('span', `status status-${up ? 'running' : 'stopped'}`);
-      pill.textContent = up ? '● Running' : '● Stopped';
-      const actions = makeElement('div', 'svc-actions');
-      // Stop or start this one service. The list updates by itself when Docker reports the change.
-      const power = iconButton(up ? 'stop' : 'play', up ? `Stop ${item.name}` : `Start ${item.name}`, () => toggleService(project.name, item.name, up, power));
-      power.classList.add(up ? 'svc-stop' : 'svc-start');
-      actions.appendChild(power);
-      if (port) {
-        addButton(actions, 'Open', () => openDetailPort(project.name, item.name, port.container));
-      }
-      const terminalButton = addButton(actions, 'Terminal', () => openTerminal(item.name));
-      terminalButton.disabled = !up;
-      addButton(actions, 'Copy shell', () => copyText(item.shell));
-      row.append(badgeMark, info, portText, pill, actions);
-      svc.card.appendChild(row);
+    const scroll = makeElement('div', 'table-scroll');
+    const table = makeElement('table', 'dtable mini');
+    const head = makeElement('thead', '');
+    const headRow = makeElement('tr', '');
+    for (const label of ['Service', 'Image', 'Status', 'Port', 'Actions']) {
+      const th = makeElement('th', label === 'Actions' ? 'col-actions' : '');
+      th.textContent = label;
+      headRow.appendChild(th);
     }
+    head.appendChild(headRow);
+    const body = makeElement('tbody', '');
+    for (const item of services) {
+      const up = serviceRunning(item);
+      const row = makeElement('tr', 'trow');
+      const name = td('strong');
+      name.textContent = item.name;
+      const image = td('mono c-image');
+      image.textContent = item.image;
+      const status = td();
+      status.appendChild(statusCell(up ? 'running' : 'stopped', up ? 'Running' : 'Stopped'));
+      const portCell = td('c-ports');
+      if (item.ports.length) {
+        for (const port of item.ports) {
+          const link = makeElement('button', 'port-link');
+          link.type = 'button';
+          link.textContent = `${port.host}:${port.container}`;
+          link.title = `Open ${port.url}`;
+          link.disabled = !up;
+          link.addEventListener('click', () => openDetailPort(project.name, item.name, port.container));
+          portCell.appendChild(link);
+        }
+      } else {
+        portCell.textContent = 'internal';
+        portCell.classList.add('muted');
+      }
+      const actionsCell = td('col-actions');
+      const actions = makeElement('div', 'row-icons');
+      const shell = rowIconButton(ROW_ICONS.terminal, `Open shell in ${item.name}`, () => openTerminal(item.name), 'sm');
+      shell.disabled = !up;
+      const copy = rowIconButton(ROW_ICONS.copy, `Copy shell command for ${item.name}`, (event) => copyWithFeedback(item.shell, event.currentTarget), 'sm');
+      const power = rowIconButton(up ? ROW_ICONS.stop : ROW_ICONS.play, `${up ? 'Stop' : 'Start'} ${item.name}`, () => toggleService(project.name, item.name, up, power), 'sm');
+      actions.append(shell, copy, power);
+      actionsCell.appendChild(actions);
+      row.append(name, image, status, portCell, actionsCell);
+      body.appendChild(row);
+    }
+    table.append(head, body);
+    scroll.appendChild(table);
+    svc.section.appendChild(scroll);
   }
-  main.appendChild(svc.card);
+  main.appendChild(svc.section);
 
   // Logs
-  const logs = ovCard(`Logs · ${project.name}`);
-  const live = makeElement('span', 'status status-' + (isRunningProject(project) ? 'running' : 'stopped'));
-  live.textContent = isRunningProject(project) ? '● Live' : '● Stopped';
-  logs.head.appendChild(live);
-  const term = makeElement('pre', 'term');
-  term.textContent = fresh ? (lastLines(overviewState.logs, 8) || 'No logs yet.') : 'Loading...';
-  logs.card.appendChild(term);
-  const more = makeElement('div', 'row-actions');
-  addButton(more, 'Open full logs', () => setDetailTab('logs'));
-  logs.card.appendChild(more);
-  main.appendChild(logs.card);
-
-  // Laravel: a short card that leads to the Composer help of the Settings tab.
-  if (project.stack === 'laravel' && project.editable) {
-    const help = ovCard('Composer or package problems?');
-    const note = makeElement('p', 'pcard-note');
-    note.textContent = 'Errors from composer (security advisories, php version, upgrading Laravel)? The steps to fix them are in the Settings tab.';
-    const row = makeElement('div', 'row-actions');
-    addButton(row, 'Open Composer help', openComposerHelp);
-    help.card.append(note, row);
-    main.appendChild(help.card);
-  }
-
+  main.appendChild(logsPanel(project, services, isRunningProject(project)));
 
   // Database
-  const db = services.find((item) => ['mysql', 'postgres', 'mongodb'].includes(item.name));
-  const dbCard = ovCard('Database');
+  const db = services.find((item) => ['mysql', 'postgres', 'mongodb', 'mariadb'].includes(item.name));
   if (db) {
-    const dbPort = db.ports[0];
+    const dbPanel = panel('Database');
+    const image = makeElement('span', 'panel-meta mono');
+    image.textContent = db.image;
+    dbPanel.head.appendChild(image);
     const details = fresh && overviewState.details ? overviewState.details : null;
-    dbCard.head.appendChild(makeElement('span', 'muted small')).textContent = db.image;
-    dbCard.card.appendChild(kvRow('Host', '127.0.0.1'));
-    dbCard.card.appendChild(kvRow('Port', dbPort ? String(dbPort.host) : 'not published'));
+    const dbPort = db.ports[0];
+    const rows = [['Host', '127.0.0.1'], ['Port', dbPort ? String(dbPort.host) : 'not published']];
     if (db.name !== 'mongodb') {
-      dbCard.card.appendChild(kvRow('Database', details && details.dbName ? details.dbName : '–'));
-      dbCard.card.appendChild(kvRow('User', details && details.dbUser ? details.dbUser : '–'));
+      rows.push(['Database', details && details.dbName ? details.dbName : '–']);
+      rows.push(['User', details && details.dbUser ? details.dbUser : '–']);
     }
-    dbCard.card.appendChild(kvRow('Password', 'Saved in Credentials & .env'));
-    const actions = makeElement('div', 'row-actions');
-    addButton(actions, 'Show credentials', () => setDetailTab('credentials'));
+    rows.push(['Password', '••••••••••••']);
+    dbPanel.section.appendChild(kvList(rows));
+    const foot = makeElement('div', 'panel-actions');
+    const show = addButton(foot, 'Show credentials', () => setDetailTab('credentials'));
+    show.classList.add('grow');
     if (project.services.includes('phpmyadmin')) {
-      addButton(actions, 'Open phpMyAdmin', () => openService(project.name, 'phpmyadmin', 'phpMyAdmin'));
+      const pma = addButton(foot, 'Open phpMyAdmin', () => openService(project.name, 'phpmyadmin', 'phpMyAdmin'));
+      pma.classList.add('grow', 'soft');
+    } else if (project.services.includes('adminer')) {
+      const adminer = addButton(foot, 'Open Adminer', () => openService(project.name, 'adminer', 'Adminer'));
+      adminer.classList.add('grow', 'soft');
     }
-    dbCard.card.appendChild(actions);
-  } else {
-    const note = makeElement('p', 'pcard-note');
-    note.textContent = 'This project has no database.';
-    dbCard.card.appendChild(note);
+    dbPanel.section.appendChild(foot);
+    side.appendChild(dbPanel.section);
   }
-  side.appendChild(dbCard.card);
+
+  // Volumes
+  const volumeData = fresh ? overviewState.volumes : null;
+  const disk = fresh && overviewState.disk ? overviewState.disk : null;
+  const sizeOf = new Map(disk ? disk.volumes.map((v) => [v.name, v.bytes]) : []);
+  const volPanel = panel('Volumes');
+  const volList = makeElement('div', 'vol-list');
+  const vols = volumeData && volumeData.volumes ? volumeData.volumes : (disk ? disk.volumes : []);
+  for (const v of vols) {
+    const row = makeElement('div', 'vol-row');
+    const mark = makeElement('span', 'vol-ico');
+    mark.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"></path><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"></path></svg>';
+    const text = makeElement('div', 'vol-text');
+    const name = makeElement('span', 'mono');
+    name.textContent = v.name;
+    const label = makeElement('span', 'muted small');
+    label.textContent = volumeLabel(v);
+    text.append(name, label);
+    const size = makeElement('span', 'vol-size');
+    const bytes = sizeOf.has(v.name) ? sizeOf.get(v.name) : v.bytes;
+    size.textContent = bytes ? formatBytes(bytes) : '–';
+    row.append(mark, text, size);
+    volList.appendChild(row);
+  }
+  if (!vols.length) {
+    const note = makeElement('p', 'muted small');
+    note.textContent = fresh ? 'This project keeps no data in Docker volumes.' : 'Loading...';
+    volList.appendChild(note);
+  }
+  volPanel.section.appendChild(volList);
+  side.appendChild(volPanel.section);
 
   // Details
-  const info = ovCard('Details');
-  info.card.appendChild(kvRow('Runtime', project.label));
+  const info = panel('Details');
   const shared = Boolean(links && links.lanShare);
-  info.card.appendChild(kvRow('Network', shared ? 'Shared on your network' : 'Local only (127.0.0.1)'));
-  const note = makeElement('p', 'pcard-note');
-  note.textContent = 'To share on your network or change services, use the Settings tab.';
-  info.card.appendChild(note);
-  const actions = makeElement('div', 'row-actions');
-  addButton(actions, 'Open folder', () => runProjectAction('Folder', 'openFolder', project.name));
+  const folders = volumeData && volumeData.folders ? String(volumeData.folders.length) : '–';
+  info.section.appendChild(kvList([['Runtime', project.label, false], ['Network share', shared ? 'On' : 'Off', false], ['Shared folders', folders, false]]));
+  const infoActions = makeElement('div', 'panel-actions');
+  addButton(infoActions, 'Open folder', () => runProjectAction('Folder', 'openFolder', project.name)).classList.add('grow');
   if (['nestjs', 'nextjs', 'vue', 'nuxt'].includes(project.stack)) {
-    const editorButton = addButton(actions, 'Packages for editor', () => runProjectAction('Install packages', 'installPackages', project.name, EDITOR_PACKAGES_TEXT));
+    const editorButton = addButton(infoActions, 'Packages for editor', () => runProjectAction('Install packages', 'installPackages', project.name, EDITOR_PACKAGES_TEXT));
     editorButton.title = 'Installs node_modules into the project folder so VS Code can find the types. The app itself keeps its own fast copy in Docker.';
+    editorButton.classList.add('grow');
   }
-  info.card.appendChild(actions);
-  side.appendChild(info.card);
+  info.section.appendChild(infoActions);
+  side.appendChild(info.section);
 
   side.appendChild(networkCard(project, links));
-
-  // Delete, kept out of the way
-  const danger = makeElement('div', 'ov-danger');
-  const deleteButton = addButton(danger, 'Delete project...', () => startDeleteProject(project.name));
-  deleteButton.classList.add('danger');
-  side.appendChild(danger);
 
   box.append(main, side);
 }
@@ -2220,6 +3180,8 @@ function setDetailTab(tab) {
   el.editCard.hidden = true;
   el.credCard.hidden = true;
   el.volumesCard.hidden = true;
+  el.logViewCard.hidden = true;
+  if (tab !== 'logs') stopLogView();
 
   const name = detailState.name;
   if (tab === 'services') openLinks(name);
@@ -2227,6 +3189,11 @@ function setDetailTab(tab) {
   else if (tab === 'logs') showLogs(name);
   else if (tab === 'credentials') showConnection(name);
   else if (tab === 'settings') openEdit(name);
+
+  // The Save footer is on every tab. Off the Settings tab the form is loaded hidden, so Save works from there too.
+  const project = projectsView.list.find((p) => p.name === name);
+  byId('detail-footer').hidden = !(project && project.editable);
+  if (project && project.editable && tab !== 'settings') openEdit(name, false);
 }
 
 // ---------- Volumes tab ----------
@@ -2240,113 +3207,187 @@ const VOLUME_ICONS = {
   folder: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>',
 };
 
-// A small line of "name  value" with a copy button, for the paths and names.
+// A label and a value in a box with a copy button, for the paths and names.
 function volField(label, value) {
-  const field = makeElement('div', 'vol-field');
-  const key = makeElement('span', 'vol-key');
+  const field = makeElement('div', 'vfield');
+  const key = makeElement('span', 'vfield-key');
   key.textContent = label;
-  const box = makeElement('div', 'vol-val');
-  const code = makeElement('code', '');
+  const box = makeElement('div', 'vfield-val');
+  const code = makeElement('span', 'mono');
   code.textContent = value;
-  box.append(code, iconButton('copy', `Copy ${label.toLowerCase()}`, (event) => copyWithFeedback(value, event.currentTarget)));
+  box.append(code, rowIconButton(ROW_ICONS.copy, `Copy ${label.toLowerCase()}`, (event) => copyWithFeedback(value, event.currentTarget), 'sm'));
   field.append(key, box);
   return field;
 }
 
 function volumeMark(kind) {
-  const mark = makeElement('span', `vol-mark vol-${kind}`);
+  const mark = makeElement('span', `vmark vmark-${kind}`);
   mark.setAttribute('aria-hidden', 'true');
   mark.innerHTML = VOLUME_ICONS[kind] || VOLUME_ICONS.other;
   return mark;
 }
 
+const VOLUME_COLORS = { data: '#6EA8FF', cache: '#E3B341', other: '#A78BFA' };
+
+function volumeTile(label, value) {
+  const tile = makeElement('div', 'vtile');
+  const name = makeElement('span', 'uc-label');
+  name.textContent = label;
+  const strong = makeElement('span', 'vtile-value');
+  strong.textContent = value;
+  tile.append(name, strong);
+  return { tile, strong };
+}
+
 function renderVolumes(name, data) {
   const body = el.volumesBody;
   body.textContent = '';
+  const project = projectsView.list.find((p) => p.name === name);
+  const running = Boolean(project && isRunningProject(project));
 
   // Totals
-  const tiles = makeElement('div', 'vol-tiles');
-  const addTile = (value, label) => {
-    const tile = makeElement('div', 'vol-tile');
-    const strong = makeElement('strong', '');
-    strong.textContent = value;
-    const small = makeElement('span', 'muted small');
-    small.textContent = label;
-    tile.append(strong, small);
-    tiles.appendChild(tile);
-  };
-  const made = data.volumes.filter((v) => v.exists).length;
-  addTile(String(data.volumes.length), data.volumes.length === 1 ? 'Docker volume' : 'Docker volumes');
-  addTile('…', 'Size on disk');
-  tiles.children[1].querySelector('strong').dataset.total = 'true';
-  addTile(String(data.folders.length), data.folders.length === 1 ? 'Shared folder' : 'Shared folders');
+  const tiles = makeElement('div', 'vtiles');
+  tiles.appendChild(volumeTile('Docker volumes', String(data.volumes.length)).tile);
+  const size = volumeTile('Size on disk', '…');
+  size.strong.dataset.total = 'true';
+  const split = makeElement('div', 'ovc-bar vsplit');
+  split.dataset.split = 'true';
+  size.tile.appendChild(split);
+  tiles.appendChild(size.tile);
+  tiles.appendChild(volumeTile('Shared folders', String(data.folders.length)).tile);
   body.appendChild(tiles);
 
   // Docker volumes
-  const section = credSection('Docker volumes', 'Docker keeps these on its own disk. They stay when you stop or restart the project. Deleting the project asks if they should go too.');
+  const head = makeElement('div', 'section-head');
+  const text = makeElement('div', '');
+  const title = makeElement('h2', 'panel-title');
+  title.textContent = 'Docker volumes';
+  const note = makeElement('p', '');
+  note.textContent = 'Docker keeps these on its own disk. They stay when you stop or restart the project. Deleting the project asks if they should go too.';
+  text.append(title, note);
+  const refresh = addButton(head, 'Refresh', () => showVolumes(name));
+  refresh.classList.add('btn-sm');
+  head.prepend(text);
+  body.appendChild(head);
+
   if (data.volumes.length === 0) {
-    const empty = makeElement('div', 'empty');
-    const title = makeElement('strong', '');
-    title.textContent = 'This project has no Docker volumes';
-    const text = makeElement('p', 'muted small');
-    text.textContent = 'Everything it needs is in the project folder. Add a database in the Settings tab and its data volume shows here.';
-    empty.append(title, text);
-    section.appendChild(empty);
+    const empty = makeElement('div', 'panel panel-empty');
+    const strong = makeElement('strong', '');
+    strong.textContent = 'This project has no Docker volumes';
+    const small = makeElement('p', 'muted small');
+    small.textContent = 'Everything it needs is in the project folder. Add a database in the Settings tab and its data volume shows here.';
+    empty.append(strong, small);
+    body.appendChild(empty);
   } else {
-    const list = makeElement('div', 'vol-list');
+    const grid = makeElement('div', 'vgrid');
     for (const v of data.volumes) {
-      const card = makeElement('div', 'vol-card');
-      const head = makeElement('div', 'vol-head');
-      const info = makeElement('div', 'vol-info');
-      const title = makeElement('strong', '');
-      title.textContent = `${v.service} · ${v.label}`;
-      const note = makeElement('span', 'muted small');
-      note.textContent = v.note;
-      info.append(title, note);
-      const state = makeElement('span', `status status-${v.exists ? 'running' : 'stopped'}`);
-      state.textContent = v.exists ? '● Created' : '● Not created yet';
-      const size = makeElement('span', 'vol-size');
-      size.textContent = v.exists ? '…' : '–';
-      if (v.exists) size.dataset.volume = v.name;
-      head.append(volumeMark(v.kind), info, size, state);
-      card.append(head, volField('Volume name', v.name), volField('Inside the container', v.target));
-      list.appendChild(card);
+      const card = makeElement('section', 'vcard');
+      const top = makeElement('div', 'vcard-top');
+      const info = makeElement('div', 'vcard-info');
+      const h3 = makeElement('h3', '');
+      h3.textContent = `${v.service} · ${v.label}`;
+      const p = makeElement('p', '');
+      p.textContent = v.note || (v.kind === 'data' ? 'Your data. It stays when the project is stopped or restarted.' : '');
+      info.append(h3, p);
+      const meta = makeElement('div', 'vcard-meta');
+      const bytes = makeElement('span', 'vcard-size');
+      bytes.textContent = v.exists ? '…' : '–';
+      if (v.exists) bytes.dataset.volume = v.name;
+      const state = makeElement('span', `pill-status`);
+      state.dataset.state = v.exists ? 'running' : 'stopped';
+      const dot = makeElement('span', 'dot');
+      state.append(dot, v.exists ? 'Created' : 'Not created yet');
+      meta.append(bytes, state);
+      top.append(volumeMark(v.kind), info, meta);
+      const bar = makeElement('div', 'vbar');
+      const fill = makeElement('div', '');
+      fill.style.setProperty('--c', VOLUME_COLORS[v.kind] || VOLUME_COLORS.other);
+      fill.style.setProperty('--p', '0%');
+      if (v.exists) fill.dataset.bar = v.name;
+      bar.appendChild(fill);
+      const foot = makeElement('div', 'vcard-foot');
+      const hint = makeElement('span', '');
+      if (v.kind === 'data') hint.textContent = 'Deleting the project asks before this volume goes.';
+      else if (v.kind === 'cache') hint.textContent = v.service === 'php' ? 'Safe to rebuild with composer install.' : 'Safe to install again.';
+      else hint.textContent = 'Kept by Docker for this project.';
+      const shell = addButton(foot, 'Open shell here', async () => {
+        try {
+          await window.envhub.projectShell(name, v.service);
+        } catch (err) {
+          setActionStatus(`Could not open a terminal: ${ipcMessage(err)}`, name, 'error');
+        }
+      });
+      shell.classList.add('btn-sm');
+      shell.disabled = !running;
+      if (!running) shell.title = 'Start the project to open a shell';
+      foot.prepend(hint);
+      card.append(top, bar, volField('Volume name', v.name), volField('Inside the container', v.target), foot);
+      grid.appendChild(card);
     }
-    section.appendChild(list);
+    body.appendChild(grid);
+    const made = data.volumes.filter((v) => v.exists).length;
     if (made < data.volumes.length) {
       const hint = makeElement('p', 'muted small');
       hint.textContent = 'A volume is created the first time the project starts.';
-      section.appendChild(hint);
+      body.appendChild(hint);
     }
   }
-  body.appendChild(section);
 
   // Folders shared from this computer
-  if (data.folders.length > 0) {
-    const shared = credSection('Shared folders', 'Folders and files from this computer that the containers see. Changes show on both sides at once.');
-    const list = makeElement('div', 'vol-list');
-    for (const f of data.folders) {
-      const card = makeElement('div', 'vol-card');
-      const head = makeElement('div', 'vol-head');
-      const info = makeElement('div', 'vol-info');
-      const title = makeElement('strong', '');
-      title.textContent = f.service;
-      const note = makeElement('span', 'muted small');
-      note.textContent = 'On this computer, shared into the container';
-      info.append(title, note);
-      head.append(volumeMark('folder'), info);
-      card.append(head, volField('On this computer', f.source), volField('Inside the container', f.target));
-      list.appendChild(card);
+  const shared = makeElement('section', 'panel');
+  const sharedHead = makeElement('div', 'panel-head');
+  const sharedText = makeElement('div', 'panel-head-text');
+  const sharedTitle = makeElement('h2', 'panel-title');
+  sharedTitle.textContent = 'Shared folders';
+  const sharedNote = makeElement('p', '');
+  sharedNote.textContent = 'Folders on this computer that containers read and write directly.';
+  sharedText.append(sharedTitle, sharedNote);
+  sharedHead.appendChild(sharedText);
+  const openFolder = addButton(sharedHead, 'Open project folder', () => runProjectAction('Folder', 'openFolder', name));
+  openFolder.classList.add('btn-xs');
+  shared.appendChild(sharedHead);
+  if (data.folders.length === 0) {
+    const none = makeElement('p', 'panel-note');
+    none.textContent = 'No folders from this computer are shared into the containers.';
+    shared.appendChild(none);
+  } else {
+    const scroll = makeElement('div', 'table-scroll');
+    const table = makeElement('table', 'dtable mini folders');
+    const thead = makeElement('thead', '');
+    const headRow = makeElement('tr', '');
+    for (const label of ['Service', 'On this computer', '', 'Inside the container']) {
+      const th = makeElement('th', '');
+      if (label) th.textContent = label;
+      else {
+        const sr = makeElement('span', 'sr-only');
+        sr.textContent = 'maps to';
+        th.appendChild(sr);
+      }
+      headRow.appendChild(th);
     }
-    shared.appendChild(list);
-    const actions = makeElement('div', 'row-actions vol-actions');
-    addButton(actions, 'Open project folder', () => runProjectAction('Folder', 'openFolder', name));
-    shared.appendChild(actions);
-    body.appendChild(shared);
+    thead.appendChild(headRow);
+    const tbody = makeElement('tbody', '');
+    for (const f of data.folders) {
+      const row = makeElement('tr', 'trow');
+      const svc = td('strong');
+      svc.textContent = f.service;
+      const source = td('mono c-image');
+      source.textContent = f.source;
+      const arrow = td('muted');
+      arrow.textContent = '→';
+      const target = td('mono c-image');
+      target.textContent = f.target;
+      row.append(svc, source, arrow, target);
+      tbody.appendChild(row);
+    }
+    table.append(thead, tbody);
+    scroll.appendChild(table);
+    shared.appendChild(scroll);
   }
+  body.appendChild(shared);
 }
 
-// The sizes come later (Docker is slow to count them): fill them into the list when they arrive.
+// The sizes come later (Docker is slow to count them): fill them into the cards when they arrive.
 async function fillVolumeSizes(name) {
   let bytes = new Map();
   try {
@@ -2362,6 +3403,19 @@ async function fillVolumeSizes(name) {
     const value = bytes ? bytes.get(span.dataset.volume) || 0 : null;
     span.textContent = value === null ? '–' : formatBytes(value);
     total += value || 0;
+  }
+  const split = el.volumesBody.querySelector('[data-split]');
+  if (split) split.textContent = '';
+  for (const fill of el.volumesBody.querySelectorAll('[data-bar]')) {
+    const value = bytes ? bytes.get(fill.dataset.bar) || 0 : 0;
+    const share = total ? Math.round((value / total) * 100) : 0;
+    fill.style.setProperty('--p', `${share}%`);
+    if (split && value) {
+      const part = makeElement('span', '');
+      part.style.setProperty('--w', String(value));
+      part.style.setProperty('background', fill.style.getPropertyValue('--c'));
+      split.appendChild(part);
+    }
   }
   const totalBox = el.volumesBody.querySelector('[data-total]');
   if (totalBox) totalBox.textContent = bytes ? formatBytes(total) : '–';
@@ -3065,19 +4119,92 @@ function syncPythonRow() {
 function showProjectsDir(info) {
   el.projectsDir.textContent = info.projectsDir;
   el.resetProjectsDir.hidden = info.isDefault;
-  setText('settings-projects-dir', info.projectsDir);
+  byId('settings-projects-dir').value = info.projectsDir;
+  byId('settings-docker-dir').value = info.dockerFilesDir || '';
   byId('settings-reset-dir').hidden = info.isDefault;
-  byId('settings-stop-docker').checked = info.stopDockerOnExit !== false;
+  savedSettings.stopDockerOnExit = info.stopDockerOnExit !== false;
+  if (!settingsDirty()) byId('settings-stop-docker').checked = savedSettings.stopDockerOnExit;
+  paintStopOnExit(savedSettings.stopDockerOnExit);
+  paintSettingsBar();
 }
 
-async function changeStopDockerOnExit(event) {
-  const box = event.target;
-  try {
-    await window.envhub.setStopDockerOnExit(box.checked);
-  } catch (err) {
-    box.checked = !box.checked;
-    say(`Could not save the setting: ${ipcMessage(err)}`);
+// ---------- Settings page: a list of sections, and Cancel / Apply for the theme and the exit choice ----------
+
+const savedSettings = { stopDockerOnExit: true };
+
+function pendingTheme() {
+  const picked = document.querySelector('input[name="theme"]:checked');
+  return picked ? picked.value : readTheme();
+}
+
+function settingsDirty() {
+  return pendingTheme() !== readTheme() || byId('settings-stop-docker').checked !== savedSettings.stopDockerOnExit;
+}
+
+function paintSettingsBar() {
+  const dirty = settingsDirty();
+  byId('settings-apply').disabled = !dirty;
+  byId('settings-cancel').disabled = !dirty;
+  setText('settings-pending', dirty ? 'Changes not applied yet' : '');
+}
+
+async function applySettings() {
+  const theme = pendingTheme();
+  if (theme !== readTheme()) applyTheme(theme);
+  const box = byId('settings-stop-docker');
+  if (box.checked !== savedSettings.stopDockerOnExit) {
+    try {
+      await window.envhub.setStopDockerOnExit(box.checked);
+      savedSettings.stopDockerOnExit = box.checked;
+      paintStopOnExit(box.checked);
+    } catch (err) {
+      say(`Could not save the setting: ${ipcMessage(err)}`);
+    }
   }
+  paintSettingsBar();
+}
+
+function cancelSettings() {
+  applyTheme(readTheme());
+  byId('settings-stop-docker').checked = savedSettings.stopDockerOnExit;
+  paintSettingsBar();
+}
+
+function paintSettingsDocker() {
+  const status = lastDockerStatus;
+  const pill = document.getElementById('settings-docker-pill');
+  if (!pill) return;
+  const running = Boolean(status && status.running);
+  const { version, build } = dockerVersionParts(status);
+  pill.dataset.state = running ? 'running' : status ? 'partly' : 'stopped';
+  setText('settings-docker-text', !status ? 'Checking' : running ? `Running · ${[version, build && `build ${build}`].filter(Boolean).join(', ')}` : 'Not running');
+}
+
+function bindSettingsPage() {
+  for (const radio of document.querySelectorAll('input[name="theme"]')) radio.addEventListener('change', paintSettingsBar);
+  byId('settings-apply').addEventListener('click', applySettings);
+  byId('settings-cancel').addEventListener('click', cancelSettings);
+  byId('settings-check-docker').addEventListener('click', () => checkDocker());
+  byId('settings-open-docker-dir').addEventListener('click', async () => {
+    try {
+      const res = await window.envhub.openDockerFilesDir();
+      if (res && res.ok === false) say(`Could not open the folder: ${res.error}`);
+    } catch (err) {
+      say(`Could not open the folder: ${ipcMessage(err)}`);
+    }
+  });
+  const nav = [...document.querySelectorAll('.settings-nav button')];
+  for (const button of nav) {
+    button.addEventListener('click', () => {
+      for (const other of nav) other.removeAttribute('aria-current');
+      button.setAttribute('aria-current', 'true');
+      byId(button.dataset.section).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+}
+
+function changeStopDockerOnExit() {
+  paintSettingsBar();
 }
 
 async function loadProjectsDir() {
@@ -3563,6 +4690,19 @@ async function generateDockerFilesNow() {
   }
 }
 
+// Short mark and one line about each service, for the service tiles of the Settings tab.
+const SERVICE_TILES = {
+  mysql: ['MY', 'Database, data kept in a volume', 'blue'],
+  mariadb: ['MA', 'Database, data kept in a volume', 'blue'],
+  postgres: ['PG', 'Database, data kept in a volume', 'blue'],
+  mongodb: ['MG', 'Document database, data kept in a volume', 'teal'],
+  redis: ['RD', 'Cache and queues', 'red'],
+  phpmyadmin: ['PH', 'Browser admin for MySQL', 'amber'],
+  adminer: ['AD', 'Browser admin for databases', 'amber'],
+  mailpit: ['MP', 'Catches outgoing mail for testing', 'teal'],
+  node: ['ND', 'Front-end build and dev server', 'green'],
+};
+
 function renderEdit(details) {
   editState.name = details.name;
   editState.running = details.running === true;
@@ -3570,26 +4710,44 @@ function renderEdit(details) {
 
   for (const label of el.editOptions.querySelectorAll('label')) label.remove();
   for (const key of details.optionKeys) {
-    const label = makeElement('label', 'opt-tile');
+    const label = makeElement('label', 'opt-tile svc-tile');
     const box = document.createElement('input');
     box.type = 'checkbox';
     box.dataset.key = key;
     box.checked = details.options[key] === true;
     box.addEventListener('change', () => syncEditDependencies(key));
+    const [markText, about, tone] = SERVICE_TILES[key] || [key.slice(0, 2).toUpperCase(), '', 'blue'];
+    const mark = makeElement('span', `svc-tile-mark tone-${tone}`);
+    mark.setAttribute('aria-hidden', 'true');
+    mark.textContent = markText;
+    const text = makeElement('span', 'svc-tile-text');
     const title = makeElement('span', 'opt-name');
     title.textContent = EDIT_LABELS[key] || key;
-    label.append(box, title);
+    const note = makeElement('span', 'svc-tile-note');
+    note.textContent = about;
+    text.append(title, note);
+    const top = makeElement('span', 'svc-tile-top');
+    top.append(box, mark, text);
+    label.append(top);
     if (registry && DB_VERSION_KEYS.includes(key)) {
+      const row = makeElement('span', 'svc-tile-ver');
+      row.append('Version');
       const select = document.createElement('select');
       select.className = 'ver-select';
       select.dataset.versionKey = key;
       select.setAttribute('aria-label', `${EDIT_LABELS[key]} version`);
       fillVersionSelect(select, key, (details.versions && details.versions[key]) || registry[key].default);
-      label.append(select);
+      row.append(select);
+      label.append(row);
     }
     el.editOptions.appendChild(label);
   }
 
+  const listed = projectsView.list.find((p) => p.name === details.name) || {};
+  const services = listed.services || [];
+  const dataCount = (listed.dataServices || []).length;
+  const folderText = listed.imported ? 'Your project folder is kept.' : 'The project folder and its files are deleted too.';
+  setText('edit-danger-text', `Delete stops and removes the ${services.length} container${services.length === 1 ? '' : 's'}.${dataCount ? ' You choose whether the database data goes too.' : ''} ${folderText} It asks before anything is removed.`);
   el.editDbName.value = details.dbName || 'app';
   el.editDbUser.value = details.dbUser || 'app';
   el.editDbPass.value = details.dbPassword || '';
@@ -3651,17 +4809,20 @@ function closeEdit() {
   el.editCard.hidden = true;
 }
 
-async function openEdit(name) {
+async function openEdit(name, show = true) {
   ensureProjectsView();
   mountPanel(el.editCard);
-  editState.name = '';
-  el.editCard.hidden = false;
+  if (editState.name !== name) editState.name = '';
+  el.editCard.hidden = !show;
   el.editError.hidden = true;
-  el.editProgress.hidden = true;
+  // An apply that is still running keeps its progress on screen when the user comes back to this tab.
+  const stillApplying = applyingName === name;
+  el.editProgress.hidden = !stillApplying;
+  setEditBusy(applyingName !== '');
   el.editExtras.textContent = '';
   for (const label of el.editOptions.querySelectorAll('label')) label.remove();
   el.editMessage.textContent = 'Loading...';
-  el.editCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  if (show) el.editCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
   // The form of the last read shows at once; the fresh one replaces it when it arrives.
   const known = overviewCache.get(name);
@@ -3702,11 +4863,20 @@ function savedText(res, applyNow) {
 const PROGRESS_CLOSE_MS = 4000;
 let progressCloseTimer = null;
 
+// The project whose apply is running now. Leaving the Settings tab does not stop it, so coming back must keep showing it.
+let applyingName = '';
+
 async function applyEdit(name, rebuild = false) {
   clearTimeout(progressCloseTimer);
+  applyingName = name;
   el.editProgress.hidden = false;
   editView.begin(rebuild ? `Rebuilding the PHP container of ${name}` : `Applying changes to ${name}`);
-  const res = await runStart(name, editView, { apply: true, rebuild });
+  let res;
+  try {
+    res = await runStart(name, editView, { apply: true, rebuild });
+  } finally {
+    applyingName = '';
+  }
   const result = describeResult(rebuild ? 'Rebuild' : 'Apply', name, res);
   setActionStatus(result, name);
   if (res.ok !== false) {
@@ -3902,42 +5072,240 @@ async function openLinks(name) {
 
 // ---------- Containers ----------
 
-// One row of the Containers list: project and service, the image, and whether it is running.
-function containerRow(c) {
+// Every ProjectDockHub container in one table, grouped under its project, with bulk Stop and Delete.
+const containersView = { items: [], query: '', onlyRunning: false, selected: new Set(), collapsed: new Set() };
+
+function containerKey(c) {
+  return `${c.project || ''}::${c.service || c.name}`;
+}
+
+function containerPorts(c) {
+  const project = projectsView.list.find((p) => p.name === c.project);
+  return project ? project.ports.filter((p) => p.service === c.service).map((port) => ({ project, port })) : [];
+}
+
+function setContainerMessage(text) {
+  byId('container-message').textContent = text;
+}
+
+async function containerAction(c, action) {
+  if (!c.project || !c.service) return;
+  const call = { stop: 'stopService', start: 'startService', remove: 'removeService' }[action];
+  try {
+    const res = await window.envhub[call](c.project, c.service);
+    if (res && res.ok === false) setContainerMessage(res.stderr || `Could not ${action} ${c.name}.`);
+    else setContainerMessage('');
+  } catch (err) {
+    setContainerMessage(`Could not ${action} ${c.name}: ${ipcMessage(err)}`);
+  }
+}
+
+function containerGroupRow(name, items) {
+  const up = items.filter((c) => c.state === 'running').length;
+  const collapsed = containersView.collapsed.has(name);
+  const row = makeElement('tr', 'group-row');
+  const checkCell = td('col-check');
+  const check = document.createElement('input');
+  check.type = 'checkbox';
+  check.setAttribute('aria-label', `Select ${name}`);
+  check.checked = items.length > 0 && items.every((c) => containersView.selected.has(containerKey(c)));
+  check.addEventListener('change', () => {
+    for (const c of items) {
+      if (check.checked) containersView.selected.add(containerKey(c));
+      else containersView.selected.delete(containerKey(c));
+    }
+    renderContainers();
+  });
+  checkCell.appendChild(check);
+  const cell = td();
+  cell.colSpan = 6;
+  const wrap = makeElement('div', 'group-head');
+  const chevron = rowIconButton(collapsed ? ROW_ICONS.chevronRight : ROW_ICONS.chevronDown, `${collapsed ? 'Expand' : 'Collapse'} ${name}`, () => {
+    if (containersView.collapsed.has(name)) containersView.collapsed.delete(name);
+    else containersView.collapsed.add(name);
+    renderContainers();
+  }, 'chev');
+  const icon = makeElement('span', 'stack-ico sm');
+  icon.innerHTML = ROW_ICONS.stack;
+  const link = makeElement('button', 'name-link strong');
+  link.type = 'button';
+  link.textContent = name;
+  link.addEventListener('click', () => {
+    if (projectsView.list.some((p) => p.name === name)) openDetail(name);
+  });
+  const meta = makeElement('span', 'muted small');
+  meta.textContent = `Compose project · ${items.length} container${items.length === 1 ? '' : 's'}`;
+  const state = up === items.length ? 'running' : up ? 'partly' : 'stopped';
+  const word = up === items.length ? 'Running' : up ? 'Partly running' : 'Stopped';
+  const status = statusCell(state, `${word} (${up}/${items.length})`, true);
+  status.classList.add('small');
+  wrap.append(chevron, icon, link, meta, status);
+  cell.appendChild(wrap);
+  row.append(checkCell, cell);
+  return row;
+}
+
+function containerTableRow(c) {
   const up = c.state === 'running';
-  const li = makeElement('li', 'container-row');
-  const main = makeElement('div', 'container-main');
-  const title = makeElement('strong', '');
-  title.textContent = c.project && c.service ? `${c.project} · ${c.service}` : c.name;
-  const image = makeElement('span', 'container-image');
+  const key = containerKey(c);
+  const row = makeElement('tr', 'trow');
+  row.classList.toggle('selected', containersView.selected.has(key));
+  const checkCell = td('col-check');
+  const check = document.createElement('input');
+  check.type = 'checkbox';
+  check.checked = containersView.selected.has(key);
+  check.setAttribute('aria-label', `Select ${c.name}`);
+  check.addEventListener('change', () => {
+    if (check.checked) containersView.selected.add(key);
+    else containersView.selected.delete(key);
+    renderContainers();
+  });
+  checkCell.appendChild(check);
+
+  const name = td('c-indent');
+  const wrap = makeElement('div', 'c-two');
+  const boxIcon = makeElement('span', 'c-box');
+  boxIcon.innerHTML = ROW_ICONS.box;
+  const text = makeElement('div', 'c-two-text');
+  const svc = makeElement('span', 'c-svc');
+  svc.textContent = c.service || c.name;
+  const full = makeElement('span', 'c-full mono');
+  full.textContent = c.name;
+  text.append(svc, full);
+  wrap.append(boxIcon, text);
+  name.appendChild(wrap);
+
+  const image = td('mono c-image link-ish');
   image.textContent = c.image;
-  main.append(title, image);
-  const pill = makeElement('span', `status status-${up ? 'running' : 'stopped'}`);
-  pill.textContent = `● ${up ? 'Running' : c.state.charAt(0).toUpperCase() + c.state.slice(1)}`;
-  const detail = makeElement('span', 'container-status muted small');
-  detail.textContent = c.status || '';
-  li.append(main, pill, detail);
-  return li;
+  const status = td();
+  const word = up ? 'Running' : String(c.state || 'stopped').replace(/^./, (x) => x.toUpperCase());
+  status.appendChild(statusCell(up ? 'running' : 'stopped', word));
+  const ports = td('c-ports');
+  const own = containerPorts(c);
+  if (own.length) for (const { project, port } of own) ports.appendChild(openPortLink(project, port));
+  else {
+    ports.textContent = '—';
+    ports.classList.add('muted');
+  }
+  const uptime = td('fg2');
+  uptime.textContent = c.status || '';
+
+  const actionsCell = td('col-actions');
+  const actions = makeElement('div', 'row-icons');
+  if (c.project && c.service) {
+    actions.appendChild(rowIconButton(up ? ROW_ICONS.stop : ROW_ICONS.play, `${up ? 'Stop' : 'Start'} ${c.name}`, async () => {
+      await containerAction(c, up ? 'stop' : 'start');
+      refreshContainers();
+    }, 'sm'));
+    actions.appendChild(rowIconButton(ROW_ICONS.logs, `View logs for ${c.name}`, () => {
+      if (projectsView.list.some((p) => p.name === c.project)) openDetailTab(c.project, 'logs');
+    }, 'sm'));
+    const shell = rowIconButton(ROW_ICONS.terminal, `Open shell in ${c.name}`, () => openShell(c.project, c.service), 'sm');
+    shell.disabled = !up;
+    actions.appendChild(shell);
+    actions.appendChild(rowIconButton(ROW_ICONS.trash, `Delete ${c.name}`, () => deleteContainers([c]), 'sm danger-hover'));
+  }
+  actionsCell.appendChild(actions);
+  row.append(checkCell, name, image, status, ports, uptime, actionsCell);
+  return row;
+}
+
+// Deletes containers only (docker rm -f). Named data volumes stay, and starting the project makes them again.
+async function deleteContainers(list) {
+  if (!list.length) return;
+  const names = list.map((c) => c.name).join(', ');
+  const ok = await confirmDialog({
+    title: list.length === 1 ? 'Delete container?' : `Delete ${list.length} containers?`,
+    body: `${names}\n\nOnly the container is removed. Database data in named volumes stays. Start the project to create the container again.`,
+    okLabel: list.length === 1 ? 'Delete container' : 'Delete containers',
+  });
+  if (!ok) return;
+  for (const c of list) await containerAction(c, 'remove');
+  for (const c of list) containersView.selected.delete(containerKey(c));
+  refreshContainers();
+  loadProjects();
+}
+
+function selectedContainers() {
+  return containersView.items.filter((c) => containersView.selected.has(containerKey(c)));
+}
+
+function renderContainers() {
+  const items = containersView.items;
+  const running = items.filter((c) => c.state === 'running').length;
+  setText('cs-total', String(items.length));
+  setText('cs-running', String(running));
+  setText('cs-exited', String(items.length - running));
+  setText('nav-ccount', String(items.length));
+
+  const needle = containersView.query.trim().toLowerCase();
+  const shown = items.filter((c) => {
+    if (containersView.onlyRunning && c.state !== 'running') return false;
+    if (!needle) return true;
+    const ports = containerPorts(c).map(({ port }) => `${port.host}:${port.container}`).join(' ');
+    return `${c.name} ${c.image} ${c.project || ''} ${c.service || ''} ${ports}`.toLowerCase().includes(needle);
+  });
+
+  const groups = new Map();
+  for (const c of shown) {
+    const key = c.project || 'other';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(c);
+  }
+
+  const body = el.containerList;
+  body.textContent = '';
+  if (!shown.length) {
+    const empty = makeElement('p', 'muted');
+    empty.textContent = items.length ? 'No container matches this search.' : 'No ProjectDockHub containers yet. Start a project to create them.';
+    body.appendChild(emptyTableRow(empty));
+  }
+  for (const [name, list] of groups) {
+    body.appendChild(containerGroupRow(name, list));
+    if (!containersView.collapsed.has(name)) for (const c of list) body.appendChild(containerTableRow(c));
+  }
+
+  const picked = selectedContainers();
+  byId('stop-selected').disabled = !picked.some((c) => c.state === 'running');
+  byId('delete-selected').disabled = picked.length === 0;
+  byId('select-all-containers').checked = items.length > 0 && picked.length === items.length;
+  setText('container-foot', `Showing ${shown.length} item${shown.length === 1 ? '' : 's'}`);
 }
 
 async function refreshContainers() {
-  el.containerList.textContent = '';
   try {
-    const items = await window.envhub.listContainers();
-    if (items.length === 0) {
-      const li = makeElement('li', 'muted');
-      li.textContent = 'No ProjectDockHub containers yet. Start a project above.';
-      el.containerList.appendChild(li);
-      return;
-    }
-    for (const c of items) {
-      el.containerList.appendChild(containerRow(c));
-    }
+    containersView.items = await window.envhub.listContainers();
   } catch (err) {
-    const li = makeElement('li', 'muted');
-    li.textContent = `Could not load containers: ${err.message}`;
-    el.containerList.appendChild(li);
+    containersView.items = [];
+    setContainerMessage(`Could not load containers: ${ipcMessage(err)}`);
   }
+  // Drop selections of containers that are gone.
+  const keys = new Set(containersView.items.map(containerKey));
+  for (const key of [...containersView.selected]) if (!keys.has(key)) containersView.selected.delete(key);
+  renderContainers();
+}
+
+function bindContainersPage() {
+  byId('container-search').addEventListener('input', (event) => {
+    containersView.query = event.target.value;
+    renderContainers();
+  });
+  byId('only-running-containers').addEventListener('change', (event) => {
+    containersView.onlyRunning = event.target.checked;
+    renderContainers();
+  });
+  byId('select-all-containers').addEventListener('change', (event) => {
+    containersView.selected.clear();
+    if (event.target.checked) for (const c of containersView.items) containersView.selected.add(containerKey(c));
+    renderContainers();
+  });
+  byId('stop-selected').addEventListener('click', async () => {
+    for (const c of selectedContainers()) if (c.state === 'running') await containerAction(c, 'stop');
+    containersView.selected.clear();
+    refreshContainers();
+    loadProjects();
+  });
+  byId('delete-selected').addEventListener('click', () => deleteContainers(selectedContainers()));
 }
 
 function scheduleRefreshContainers() {
@@ -4059,6 +5427,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   el.actionStatus = byId('action-status');
   el.startCard = byId('start-card');
   el.logsCard = byId('logs-card');
+  el.logViewCard = byId('logview-card');
   el.logsTitle = byId('logs-title');
   el.logsOutput = byId('logs-output');
   el.copyEnvDocker = byId('copy-env-docker');
@@ -4146,6 +5515,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   byId('refresh-containers').addEventListener('click', refreshContainers);
 
   window.envhub.onContainersChanged((change) => {
+    rememberEvent(change);
     // What was cached for that project is old now. The open project is read again by the refresh below.
     if (change && change.project && change.project !== detailState.name && overviewCache.has(change.project)) refreshProjectCache(change.project, 1500);
     scheduleRefreshContainers();
@@ -4185,19 +5555,34 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   el.versionsFileBtn.addEventListener('click', openVersionsFile);
 
+  // The name prefix first: the saved theme and the Docker names on every page use it.
+  let appInfo = null;
+  try {
+    appInfo = await window.envhub.getAppInfo();
+    if (appInfo && appInfo.prefix) NAME_PREFIX = appInfo.prefix;
+  } catch (err) {
+    // The default prefix is used.
+  }
+  byId('name-example').textContent = dockerName('shop', 'php');
   bindProjectsPage();
+  bindContainersPage();
+  bindLogView();
   await loadRegistry();
   syncStackForm();
   showStage('name');
 
   try {
-    const info = await window.envhub.getAppInfo();
+    const info = appInfo || (await window.envhub.getAppInfo());
     el.appInfo.textContent = `${info.name} ${info.version}`;
-    byId('settings-about').textContent = `${info.name} ${info.version}. Everything runs in Docker on this computer.`;
+    setText('brand-ver', `v${info.version}`);
+    setText('sb-app', `${info.name} ${info.version}`);
+    setText('settings-about-name', `${info.name} ${info.version}`);
+    byId('settings-about').textContent = 'Everything runs in Docker on this computer.';
   } catch (err) {
     el.appInfo.textContent = '';
   }
 
+  loadProjectsDir();
   checkDocker();
   // Docker can be closed and opened while ProjectDockHub runs, so the card keeps looking: every few seconds while the
   // window is visible, when the window gets the focus, and when the main process says the Docker stream ended.

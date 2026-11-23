@@ -1,5 +1,6 @@
 'use strict';
 
+const { containerName, composeProject, projectFilter } = require('../naming');
 // Everything the "Links & commands" panel shows for one project: each service with its image,
 // start command, web addresses and a shell command, plus the Docker commands for the whole project.
 // Pure: it only builds text. Nothing is run here.
@@ -24,8 +25,8 @@ function workdirOf(service, folder) {
 }
 
 function buildLinks({ name, config, ports, composeFile, running, lan = {}, folder }) {
-  const container = (service) => `envhub-${name}-${service}`;
-  const compose = `docker compose -f "${composeFile}" -p envhub-${name}`;
+  const container = (service) => containerName(name, service);
+  const compose = `docker compose -f "${composeFile}" -p ${composeProject(name)}`;
 
   const services = config.services.map((svc) => ({
     name: svc.name,
@@ -47,7 +48,7 @@ function buildLinks({ name, config, ports, composeFile, running, lan = {}, folde
 
   const commands = [
     { label: 'Show the logs live', text: `${compose} logs -f` },
-    { label: 'List the containers', text: `docker ps --filter label=com.envhub.project=${name}` },
+    { label: 'List the containers', text: `docker ps --filter ${projectFilter(name)}` },
     { label: 'Stop the project', text: `${compose} stop` },
     { label: 'Start it again', text: `${compose} up -d` },
     { label: 'Remove the containers', text: `${compose} down` },

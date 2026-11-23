@@ -1,5 +1,6 @@
 'use strict';
 
+const { containerName } = require('../naming');
 const { runDocker } = require('./exec');
 const { DB_NAME, DB_USER } = require('../stacks/services');
 
@@ -113,7 +114,7 @@ function alterUserCommand(service, container, password, rootPassword, dbUser = A
 function databaseSteps(services, projectName, { dbName, dbUser, appPassword, rootPassword } = {}) {
   const steps = [];
   for (const svc of services) {
-    const container = `envhub-${projectName}-${svc.name}`;
+    const container = containerName(projectName, svc.name);
     const create = createDatabaseCommand(svc.name, container, dbName);
     if (create) steps.push({ service: svc.name, label: `database ${dbName}`, ...create });
     const alter = alterUserCommand(svc.name, container, appPassword, rootPassword, dbUser || ADMIN_USER, dbName || DB_NAME);

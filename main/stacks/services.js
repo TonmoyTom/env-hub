@@ -1,5 +1,6 @@
 'use strict';
 
+const { PREFIX } = require('../naming');
 // Service definitions shared by every stack.
 // Databases use a fixed name and user, and one per-machine password, so the same credentials
 // work for the app and for the admin tools.
@@ -28,7 +29,7 @@ function dbNameOf(spec) {
 
 // The user name the app connects with. `app` is the admin account the container starts with,
 // and it is kept as it is (changing it would need a new container). The app user is created next to it.
-const RESERVED_USERS = ['root', 'postgres', 'admin', 'mysql', 'mongodb', 'envhub', 'projectdockhub'];
+const RESERVED_USERS = ['root', 'postgres', 'admin', 'mysql', 'mongodb', 'envhub', 'projectdockhub', PREFIX];
 
 function normalizeDbUser(value) {
   if (value === undefined || value === null) return undefined;

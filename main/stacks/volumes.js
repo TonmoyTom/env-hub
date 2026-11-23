@@ -1,5 +1,6 @@
 'use strict';
 
+const { volumeName } = require('../naming');
 // What the "Volumes" tab shows: every Docker volume a project uses, and the folders of the computer that are
 // shared into its containers. Pure: it takes the project config and what Docker reported, and returns plain data.
 
@@ -14,7 +15,7 @@ function purposeOf(volumeName) {
 }
 
 // `existing` = names of the volumes Docker has for this project. `sizes` = [{ name, bytes }] from Docker.
-// Volume names are the ones the compose file uses: envhub-<project>-<service>-<volume>.
+// Volume names are the ones the compose file uses: <prefix>-<project>-<service>-<volume>.
 function describeVolumes(config, projectName, existing = [], sizes = []) {
   const have = new Set(existing);
   const bytesOf = new Map(sizes.map((s) => [s.name, s.bytes]));
@@ -23,7 +24,7 @@ function describeVolumes(config, projectName, existing = [], sizes = []) {
 
   for (const svc of config.services || []) {
     for (const v of svc.dataVolumes || []) {
-      const name = `envhub-${projectName}-${svc.name}-${v.name}`;
+      const name = volumeName(projectName, svc.name, v.name);
       const purpose = purposeOf(v.name);
       volumes.push({
         name,

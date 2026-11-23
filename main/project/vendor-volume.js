@@ -1,5 +1,6 @@
 'use strict';
 
+const { lockFileName, containerName, volumeName, phpImage } = require('../naming');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -17,7 +18,7 @@ const { composerHint } = require('./composer-hints');
 const WEB_ROOT = '/var/www/html';
 const VENDOR_TARGET = `${WEB_ROOT}/vendor`;
 const VENDOR_VOLUME = 'vendor';
-const STAMP_FILE = '.envhub-lock';
+const STAMP_FILE = lockFileName;
 const LONG_TIMEOUT_MS = 30 * 60 * 1000;
 
 // A short fingerprint of composer.lock. Empty when the project has none.
@@ -42,9 +43,9 @@ function vendorPlan({ hasAutoload, stamp, lock, hostHasVendor }) {
 
 // Fills or updates the vendor volume of a running project. Resolves { ok, action, error? }.
 async function syncVendorVolume({ projectName, folder, log = () => {}, run = runDocker, stream = streamDocker }) {
-  const container = `envhub-${projectName}-php`;
-  const volume = `envhub-${projectName}-php-${VENDOR_VOLUME}`;
-  const image = `envhub-${projectName}-php`;
+  const container = containerName(projectName, 'php');
+  const volume = volumeName(projectName, 'php', VENDOR_VOLUME);
+  const image = phpImage(projectName);
 
   const probe = await run([
     'exec', container, 'sh', '-c',

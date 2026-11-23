@@ -1,5 +1,6 @@
 'use strict';
 
+const { LABELS, volumeName } = require('../naming');
 // On Linux, Docker runs containers as root, so files they write into the project folder
 // (a generated app, package-lock.json, .next) would belong to root and the user could not edit them.
 // Windows and Mac (Docker Desktop) map the owner by themselves, so nothing is needed there.
@@ -22,9 +23,9 @@ function volumeOwnerCommands(config, projectName) {
   for (const svc of config.services) {
     if (!svc.user) continue;
     for (const v of svc.dataVolumes || []) {
-      const volume = `envhub-${projectName}-${svc.name}-${v.name}`;
+      const volume = volumeName(projectName, svc.name, v.name);
       commands.push(
-        ['volume', 'create', '--label', 'com.envhub.managed=true', '--label', `com.envhub.project=${projectName}`, '--label', `com.envhub.service=${svc.name}`, volume],
+        ['volume', 'create', '--label', `${LABELS.managed}=true`, '--label', `${LABELS.project}=${projectName}`, '--label', `${LABELS.service}=${svc.name}`, volume],
         ['run', '--rm', '--user', '0:0', '--mount', `type=volume,source=${volume},target=/v`, '--entrypoint', 'chown', svc.image, svc.user, '/v'],
       );
     }

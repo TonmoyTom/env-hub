@@ -1,5 +1,6 @@
 'use strict';
 
+const { containerName, composeProject } = require('../naming');
 const http = require('http');
 const { runDocker, streamDocker } = require('./exec');
 
@@ -85,7 +86,7 @@ async function waitForApp({ projectName, config, report, log = () => {}, timeout
   const svc = readyService(config);
   if (!svc) return { ok: true };
 
-  const container = `envhub-${projectName}-${svc.name}`;
+  const container = containerName(projectName, svc.name);
   const port = svc.ports[0].host;
   const started = Date.now();
   let lastLine = '';
@@ -212,7 +213,7 @@ async function buildImages(composeArgs, report, log = () => {}, { noCache = fals
 // `report(step, fraction, detail)` is called as the work moves on. fraction is 0 to 1 or null.
 // Resolves like runDocker: { ok, stdout, stderr }.
 async function setupProject({ composeFile, projectName, config, report, log = () => {}, rebuild = false }) {
-  const composeArgs = ['compose', '-f', composeFile, '-p', `envhub-${projectName}`];
+  const composeArgs = ['compose', '-f', composeFile, '-p', composeProject(projectName)];
 
   const images = [...new Set(config.services.filter((s) => !s.build).map((s) => s.image))];
   report('pull', 0, 'Checking which images are on this computer');

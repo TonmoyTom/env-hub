@@ -1,9 +1,9 @@
 'use strict';
 
+const { LABELS, MANAGED_FILTER, projectFilter, serviceFilter, composeProject, phpImage, networkName } = require('../naming');
 const { runDocker, firstLine } = require('./exec');
 const { NAME_RE } = require('../compose/generate');
 
-const MANAGED_FILTER = 'label=com.envhub.managed=true';
 const ID_RE = /^[a-f0-9]{12,64}$/;
 
 function assertProjectName(name) {
@@ -23,12 +23,12 @@ function parseLabels(text) {
   return labels;
 }
 
-// Only envhub-managed containers are ever listed or changed.
+// Only ProjectDockHub containers are ever listed or changed.
 async function listContainers(projectName) {
   const args = ['ps', '-a', '--filter', MANAGED_FILTER];
   if (projectName !== null && projectName !== undefined) {
     assertProjectName(projectName);
-    args.push('--filter', `label=com.envhub.project=${projectName}`);
+    args.push('--filter', projectFilter(projectName));
   }
   args.push('--format', '{{json .}}');
 
@@ -49,8 +49,8 @@ async function listContainers(projectName) {
         image: c.Image,
         state: c.State,
         status: c.Status,
-        project: labels['com.envhub.project'] || null,
-        service: labels['com.envhub.service'] || null,
+        project: labels[LABELS.project] || null,
+        service: labels[LABELS.service] || null,
       };
     });
 }
@@ -63,7 +63,7 @@ async function projectContainerIds(projectName, { runningOnly }) {
   if (!runningOnly) {
     args.push('-a');
   }
-  args.push('-q', '--filter', MANAGED_FILTER, '--filter', `label=com.envhub.project=${projectName}`);
+  args.push('-q', '--filter', MANAGED_FILTER, '--filter', projectFilter(projectName));
 
   const res = await runDocker(args);
   if (!res.ok) {
@@ -83,7 +83,8 @@ async function projectLogs(projectName, lines = 500) {
   const chunks = [];
 
   for (const id of ids) {
-    const res = await runDocker(['logs', '--tail', String(cap), id]);
+    // With timestamps, so the window can put the lines of all containers in time order.
+    const res = await runDocker(['logs', '--timestamps', '--tail', String(cap), id]);
     chunks.push(`== ${id.slice(0, 12)} ==\n${res.stdout}${res.stderr}`);
   }
 
@@ -96,10 +97,10 @@ async function projectVolumeNames(projectName) {
   const res = await runDocker([
     'volume', 'ls', '-q',
     '--filter', MANAGED_FILTER,
-    '--filter', `label=com.envhub.project=${projectName}`,
+    '--filter', projectFilter(projectName),
   ]);
   if (!res.ok) return [];
-  return res.stdout.split('\n').map((s) => s.trim()).filter((s) => s.startsWith(`envhub-${projectName}-`));
+  return res.stdout.split('\n').map((s) => s.trim()).filter((s) => s.startsWith(`${composeProject(projectName)}-`));
 }
 
 // Services the project should have but that have no container at all (for example after
@@ -138,27 +139,30 @@ async function removeProject(projectName, { keepData = false } = {}) {
   }
 
   // These can be rebuilt on the next create, so a failure here is not an error.
-  await runDocker(['image', 'rm', `envhub-${projectName}-php`]);
-  await runDocker(['network', 'rm', `envhub-${projectName}_default`]);
+  await runDocker(['image', 'rm', phpImage(projectName)]);
+  await runDocker(['network', 'rm', networkName(projectName)]);
   return { ok: true, stdout: '', stderr: '' };
 }
 
 // Starts or stops ONE service of a project (its container), found by the ProjectDockHub labels.
-// `action` is 'start' or 'stop'. A service whose container does not exist (removed) cannot be started
-// here: starting the whole project creates it again.
+// `action` is 'start', 'stop' or 'remove'. A service whose container does not exist (removed) cannot be started
+// here: starting the whole project creates it again. 'remove' deletes only the container (docker rm -f);
+// named data volumes stay, so the next start of the project creates the container again with the same data.
+const SERVICE_ACTIONS = { start: ['start'], stop: ['stop'], remove: ['rm', '-f'] };
+
 async function serviceAction(projectName, serviceName, action, run = runDocker) {
   assertProjectName(projectName);
   if (typeof serviceName !== 'string' || !NAME_RE.test(serviceName)) throw new Error('Invalid service name');
-  if (action !== 'start' && action !== 'stop') throw new Error('Invalid action');
+  if (!Object.prototype.hasOwnProperty.call(SERVICE_ACTIONS, action)) throw new Error('Invalid action');
 
   const found = await run(['ps', '-a', '-q', '--filter', MANAGED_FILTER,
-    '--filter', `label=com.envhub.project=${projectName}`, '--filter', `label=com.envhub.service=${serviceName}`]);
+    '--filter', projectFilter(projectName), '--filter', serviceFilter(serviceName)]);
   if (!found.ok) throw new Error(firstLine(found.stderr) || 'Could not find the container');
   const ids = found.stdout.split(String.fromCharCode(10)).map((id) => id.trim()).filter((id) => ID_RE.test(id));
   if (ids.length === 0) {
     return { ok: false, stdout: '', stderr: `The container of ${serviceName} does not exist. Start the whole project to create it.` };
   }
-  return run([action, ...ids], { timeout: action === 'stop' ? 120000 : 60000 });
+  return run([...SERVICE_ACTIONS[action], ...ids], { timeout: action === 'start' ? 60000 : 120000 });
 }
 
 async function restartProject(projectName) {

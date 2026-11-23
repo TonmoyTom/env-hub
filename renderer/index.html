@@ -9,6 +9,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ProjectDockHub</title>
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="console.css" />
   </head>
   <body data-view="projects">
     <div class="winbar" id="winbar">
@@ -26,105 +27,54 @@
       <button type="button" data-win="maximize" aria-label="Maximize">&#9633;</button>
       <button type="button" data-win="close" aria-label="Close" class="winbar-close">&#10005;</button>
     </div>
+    <header class="topbar">
+      <div class="tb-brand">
+        <span class="tb-logo" aria-hidden="true"
+          ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.8"><rect x="3" y="13" width="5" height="5" rx="1"></rect><rect x="9.5" y="13" width="5" height="5" rx="1"></rect><rect x="16" y="13" width="5" height="5" rx="1"></rect><rect x="9.5" y="6" width="5" height="5" rx="1"></rect></svg
+        ></span>
+        <span class="tb-name">ProjectDockHub</span>
+        <span class="tag-ver" id="brand-ver"></span>
+       
+      </div>
+      <label class="tb-search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+        <span class="sr-only">Search</span>
+        <input id="global-search" type="search" placeholder="Search projects, containers, ports" autocomplete="off" />
+        <kbd>Ctrl K</kbd>
+      </label>
+      <div class="tb-right">
+        <span class="tb-docker" id="tb-docker"><span class="dot" id="tb-docker-dot" data-state="checking"></span><span id="tb-docker-text">Docker</span></span>
+        <button type="button" class="tb-icon" id="tb-settings" aria-label="Settings" title="Settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg>
+        </button>
+      </div>
+    </header>
     <div class="app">
       <aside class="sidebar" aria-label="Main">
-        <div class="brand">
-          <span class="brand-mark" aria-hidden="true"
-            ><img src="assets/logo-stack.png" alt=""
-          /></span>
-          <span class="brand-name">ProjectDockHub</span>
-        </div>
-
-        <button
-          type="button"
-          class="nav-item"
-          id="nav-projects"
-          data-view="projects"
-          aria-current="page"
-        >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <rect x="3" y="3" width="7" height="7" rx="2"></rect>
-            <rect x="14" y="3" width="7" height="7" rx="2"></rect>
-            <rect x="3" y="14" width="7" height="7" rx="2"></rect>
-            <rect x="14" y="14" width="7" height="7" rx="2"></rect>
-          </svg>
-          <span>Projects</span>
+        <button type="button" class="nav-item" id="nav-projects" data-view="projects" aria-current="page">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"></path><path d="M3 13l9 5 9-5"></path></svg>
+          <span class="nav-label">Projects</span>
           <span class="nav-count" id="nav-count">0</span>
         </button>
+        <button type="button" class="nav-item" id="nav-system" data-view="system">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"></path><path d="M3 8l9 5 9-5M12 13v8"></path></svg>
+          <span class="nav-label">Containers</span>
+          <span class="nav-count" id="nav-ccount">0</span>
+        </button>
         <button type="button" class="nav-item" id="nav-new" data-view="new">
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            aria-hidden="true"
-          >
-            <path d="M12 5v14M5 12h14"></path>
-          </svg>
-          <span>New project</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+          <span class="nav-label">New project</span>
         </button>
-        <button
-          type="button"
-          class="nav-item"
-          id="nav-system"
-          data-view="system"
-        >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M4 7h16v10H4z"></path>
-            <path d="M8 11h.01M12 11h.01M16 11h.01"></path>
-          </svg>
-          <span>Containers</span>
-        </button>
-
-        <button
-          type="button"
-          class="nav-item"
-          id="nav-settings"
-          data-view="settings"
-        >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="3"></circle>
-            <path
-              d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"
-            ></path>
-          </svg>
-          <span>Settings</span>
+        <button type="button" class="nav-item" id="nav-settings" data-view="settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"></path><circle cx="16" cy="6" r="2"></circle><circle cx="10" cy="12" r="2"></circle><circle cx="18" cy="18" r="2"></circle></svg>
+          <span class="nav-label">Settings</span>
         </button>
 
         <div class="sidebar-foot">
-          <span id="app-info" class="muted">Loading...</span>
+          <span class="sf-label">Docker engine</span>
+          <span class="sf-state" id="sf-state" data-state="checking"><span class="dot"></span><span id="sf-state-text">Checking</span></span>
+          <span class="sf-ver" id="sf-ver"></span>
+          <span id="app-info" hidden></span>
         </div>
       </aside>
 
@@ -222,15 +172,22 @@
             <div id="start-progress"></div>
           </section>
 
-          <section class="card narrow view-new" id="create-card">
+          <section class="card bare view-new np-wrap" id="create-card">
+            <nav class="crumbs" aria-label="Breadcrumb">
+              <button type="button" class="crumb-link" id="np-crumb-projects">Projects</button>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+              <span class="crumb-here">New project</span>
+            </nav>
+            <div class="np-card">
             <div class="np-head">
-              <div>
-                <h2>New project</h2>
-                <p class="muted small">Three short steps. Everything runs in Docker, nothing to install on this computer.</p>
+              <div class="np-title">
+                <span class="eyebrow">stacks / create</span>
+                <h1>Create a project</h1>
+                <p>Three short steps. Everything runs in Docker, nothing to install on this computer.</p>
               </div>
               <ol class="stepper" id="stages" aria-label="Steps">
                 <li data-stage="name"><span class="step-num">1</span><span class="step-label">Name</span></li>
-                <li data-stage="setup"><span class="step-num">2</span><span class="step-label">Setup</span></li>
+                <li data-stage="setup"><span class="step-num">2</span><span class="step-label">Services</span></li>
                 <li data-stage="create"><span class="step-num">3</span><span class="step-label">Create</span></li>
               </ol>
             </div>
@@ -269,11 +226,8 @@
 
               <div class="np-section">
                 <label class="np-label" for="new-name">Project name</label>
-                <div class="field-row">
-                  <input id="new-name" type="text" placeholder="e.g. shop" autocomplete="off" required />
-                  <button type="submit" class="primary np-next">Next <span aria-hidden="true">&rarr;</span></button>
-                </div>
-                <p class="hint">Lowercase letters, numbers and dashes, starting with a letter. It is also the name of the folder.</p>
+                <input id="new-name" type="text" placeholder="shop" autocomplete="off" required />
+                <p class="hint">Lowercase letters, numbers and dashes, starting with a letter. It is also the folder name and part of the container names, like <code id="name-example">envhub-shop-php</code>.</p>
                 <p id="name-error" class="error small" hidden></p>
               </div>
 
@@ -285,6 +239,10 @@
                 <button type="button" id="reset-projects-dir" class="link-btn" hidden>Use the default</button>
               </div>
               <p id="projects-dir-note" class="hint">Projects you made earlier stay where they are.</p>
+              <div class="stage-actions np-foot">
+                <button type="button" id="np-cancel">Cancel</button>
+                <button type="submit" class="primary np-next">Next: Services</button>
+              </div>
             </form>
 
             <form id="stage-setup" class="stage" hidden>
@@ -473,8 +431,8 @@
                 others) is kept in a Docker volume, so it stays after a restart.
               </p>
 
-              <div class="stage-actions">
-                <button type="button" id="setup-back">Back</button>
+              <div class="stage-actions np-foot">
+                <button type="button" id="setup-back">&larr; Back</button>
                 <button type="submit" class="primary">Create project</button>
               </div>
             </form>
@@ -482,7 +440,7 @@
             <div id="stage-create" class="stage" hidden>
               <div id="create-progress"></div>
               <p id="create-message" class="muted small" aria-live="polite"></p>
-              <div class="stage-actions" id="create-actions" hidden>
+              <div class="stage-actions np-foot" id="create-actions" hidden>
                 <button type="button" id="create-open" class="primary">
                   Open
                 </button>
@@ -494,16 +452,15 @@
                 <button type="button" id="create-done">Done</button>
               </div>
             </div>
+            </div>
           </section>
 
           <section class="card bare view-projects" id="projects-card">
             <div class="page-head">
               <div>
+                <span class="eyebrow">local / stacks</span>
                 <h1>Projects</h1>
-                <p>
-                  Everything runs in Docker. Start, open and stop with one
-                  click.
-                </p>
+                <p>Each project is a Docker Compose stack. Start, open and stop it with one click.</p>
               </div>
               <div class="row-actions">
                 <button
@@ -520,103 +477,62 @@
             </div>
             <p id="versions-warning" class="error small" hidden></p>
 
-            <div class="stats">
-              <div class="stat">
-                <span class="stat-icon" aria-hidden="true"
-                  ><svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <rect x="3" y="3" width="7" height="7" rx="2"></rect>
-                    <rect x="14" y="3" width="7" height="7" rx="2"></rect>
-                    <rect x="3" y="14" width="7" height="7" rx="2"></rect>
-                    <rect x="14" y="14" width="7" height="7" rx="2"></rect></svg
-                ></span>
-                <span
-                  ><span class="stat-value" id="stat-total">0</span><br /><span
-                    class="stat-label"
-                    >Projects</span
-                  ></span
-                >
+            <div class="ov4">
+              <div class="ovc">
+                <span class="ovc-label">Stacks</span>
+                <div class="ovc-value"><span class="big" id="stat-total">0</span><span class="note ok" id="ovc-stacks-note"></span></div>
+                <div class="ovc-bar" id="ovc-stacks-bar"></div>
+                <div class="ovc-detail"><span><span id="stat-running">0</span> running</span><span><span id="stat-partly">0</span> partial</span><span><span id="stat-stopped">0</span> stopped</span></div>
               </div>
-              <div class="stat">
-                <span class="stat-icon ok" aria-hidden="true"
-                  ><svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <path d="M7 5v14l12-7z"></path></svg
-                ></span>
-                <span
-                  ><span class="stat-value" id="stat-running">0</span
-                  ><br /><span class="stat-label">Running</span></span
-                >
+              <div class="ovc">
+                <span class="ovc-label">Containers</span>
+                <div class="ovc-value"><span class="big"><span id="ovc-up">0</span><span class="of">/<span id="ovc-total">0</span></span></span><span class="note ok" id="ovc-containers-note"></span></div>
+                <div class="health-grid" id="ovc-health" role="img" aria-label="Containers running"></div>
               </div>
-              <div class="stat">
-                <span class="stat-icon warn" aria-hidden="true"
-                  ><svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <path d="M12 3a9 9 0 1 0 0 18z"></path></svg
-                ></span>
-                <span
-                  ><span class="stat-value" id="stat-partly">0</span><br /><span
-                    class="stat-label"
-                    >Partly running</span
-                  ></span
-                >
+              <div class="ovc">
+                <span class="ovc-label">Exposed ports</span>
+                <div class="ovc-value"><span class="big" id="ovc-ports">0</span><span class="note">on localhost</span></div>
+                <div class="port-chips" id="ovc-port-chips"></div>
               </div>
-              <div class="stat">
-                <span class="stat-icon stop" aria-hidden="true"
-                  ><svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <rect x="5" y="5" width="14" height="14" rx="2"></rect></svg
-                ></span>
-                <span
-                  ><span class="stat-value" id="stat-stopped">0</span
-                  ><br /><span class="stat-label">Stopped</span></span
-                >
+              <div class="ovc">
+                <span class="ovc-label">Docker engine</span>
+                <div class="ovc-engine"><span class="ring-dot" id="ovc-engine-dot" data-state="checking"></span><span id="ovc-engine">–</span></div>
+                <div class="ovc-lines"><span id="ovc-engine-build"></span><span id="ovc-engine-server"></span></div>
               </div>
             </div>
 
-            <div class="toolbar">
-              <div class="seg" role="group" aria-label="Filter by status">
-                <button type="button" id="filter-all" aria-pressed="true">
-                  All
-                </button>
-                <button type="button" id="filter-active" aria-pressed="false">
-                  Active
-                </button>
-                <button type="button" id="filter-stopped" aria-pressed="false">
-                  Stopped
-                </button>
+            <div class="panel ptable-wrap">
+              <div class="panel-toolbar">
+                <label class="field-search">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+                  <span class="sr-only">Search projects</span>
+                  <input id="project-search" type="search" placeholder="Search" autocomplete="off" />
+                </label>
+                <div class="seg" role="group" aria-label="Filter by status">
+                  <button type="button" id="filter-all" aria-pressed="true">All</button>
+                  <button type="button" id="filter-active" aria-pressed="false">Active</button>
+                  <button type="button" id="filter-stopped" aria-pressed="false">Stopped</button>
+                </div>
+                <label class="check-inline push-right"><input type="checkbox" id="only-running" /> Only show running</label>
               </div>
-              <input
-                id="project-search"
-                class="search"
-                type="search"
-                placeholder="Search projects"
-                aria-label="Search projects"
-                autocomplete="off"
-              />
+              <div class="table-scroll">
+                <table class="dtable ptable">
+                  <thead>
+                    <tr>
+                      <th class="col-check"><input type="checkbox" id="select-all-projects" aria-label="Select all projects" /></th>
+                      <th>Name</th>
+                      <th>Stack / Image</th>
+                      <th>Status</th>
+                      <th>Port(s)</th>
+                      <th>Last started</th>
+                      <th class="col-actions">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="project-list"></tbody>
+                </table>
+              </div>
+              <div class="panel-foot" id="ptable-foot"></div>
             </div>
-
-            <div id="project-list" class="project-grid"></div>
             <div
               id="action-status"
               class="note-box"
@@ -624,113 +540,56 @@
               aria-live="polite"
               hidden
             ></div>
+            <div class="split">
+              <section class="panel events-panel">
+                <div class="panel-head"><h2 class="panel-title">Events</h2><span class="live"><span class="dot"></span>live</span></div>
+                <ul class="event-list" id="event-list"></ul>
+              </section>
+              <section class="panel endpoints-panel">
+                <div class="panel-head"><h2 class="panel-title">Endpoints</h2><span class="muted small" id="endpoint-count"></span></div>
+                <ul class="endpoint-list" id="endpoint-list"></ul>
+              </section>
+            </div>
           </section>
 
           <section class="card bare view-detail" id="detail-card">
-            <div class="detail-top">
-              <button type="button" class="link-back" id="detail-back">
-                &larr; All projects
-              </button>
-            </div>
-            <div class="detail-hero">
-              <div class="hero-main">
-                <div
-                  id="detail-mark"
-                  class="pcard-mark"
-                  aria-hidden="true"
-                ></div>
-                <div class="hero-text">
-                  <div class="hero-title">
-                    <h1 id="detail-name">Project</h1>
-                    <span
-                      id="detail-status"
-                      class="status status-stopped"
-                    ></span>
-                    <span id="detail-uptime" class="muted small"></span>
-                  </div>
-                  <p id="detail-stack" class="muted small"></p>
-                  <button
-                    type="button"
-                    class="link-url"
-                    id="detail-url"
-                    hidden
-                  ></button>
-                  <div class="lan-line" id="detail-lan" hidden>
-                    <span class="lan-label">On your network</span>
-                    <button
-                      type="button"
-                      class="link-url lan-url"
-                      id="detail-lan-url"
-                      title="Click to copy"
-                    ></button>
-                  </div>
+            <nav class="crumbs" aria-label="Breadcrumb">
+              <button type="button" class="crumb-link" id="detail-back">Projects</button>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+              <span class="crumb-here" id="detail-crumb">Project</span>
+            </nav>
+            <section class="hero-card">
+              <div class="hero-icon" id="detail-mark" aria-hidden="true">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"></path><path d="M3 13l9 5 9-5"></path></svg>
+              </div>
+              <div class="hero-body">
+                <div class="hero-line">
+                  <span class="eyebrow" id="detail-eyebrow">stack</span>
+                  <h1 id="detail-name">Project</h1>
+                  <span class="pill-status" id="detail-status" data-state="stopped"><span class="dot"></span><span id="detail-status-text">Stopped</span><span id="detail-uptime"></span></span>
+                  <span class="tag" id="detail-stack"></span>
+                </div>
+                <div class="hero-links">
+                  <button type="button" class="hero-url" id="detail-url" hidden></button>
+                  <span class="lan-line" id="detail-lan" hidden><span class="tag tag-sm">LAN</span><button type="button" class="hero-url" id="detail-lan-url" title="Click to copy"></button></span>
                 </div>
               </div>
-              <div class="row-actions">
-                <button type="button" id="detail-primary" class="primary">
-                  Start
-                </button>
+              <div class="hero-actions">
+                <button type="button" id="detail-primary" class="primary">Start</button>
                 <button type="button" id="detail-terminal">
-                  <svg
-                    class="btn-icon"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="m4 17 6-6-6-6"></path>
-                    <path d="M12 19h8"></path></svg
-                  ><span>Terminal</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-5-6-5M12 19h8"></path></svg><span>Terminal</span>
                 </button>
                 <button type="button" id="detail-restart">
-                  <svg
-                    class="btn-icon"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path>
-                    <path d="M21 3v5h-5"></path>
-                    <path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path>
-                    <path d="M3 21v-5h5"></path></svg
-                  ><span>Restart</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg><span>Restart</span>
                 </button>
                 <button type="button" id="detail-stop">
-                  <svg
-                    class="btn-icon"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <rect
-                      x="6"
-                      y="6"
-                      width="12"
-                      height="12"
-                      rx="2"
-                      fill="currentColor"
-                    ></rect></svg
-                  ><span>Stop</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#f85149" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5"></rect></svg><span>Stop</span>
+                </button>
+                <button type="button" class="icon-square" id="detail-delete" aria-label="Delete project" title="Delete project">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"></path></svg>
                 </button>
               </div>
-            </div>
+            </section>
             <div
               id="detail-note"
               class="note-box"
@@ -738,7 +597,7 @@
               aria-live="polite"
               hidden
             ></div>
-            <div id="detail-stats" class="stats"></div>
+            <div id="detail-stats" class="usage4"></div>
 
             <div class="tabs" role="tablist" aria-label="Project sections">
               <button
@@ -798,109 +657,123 @@
             </div>
             <div id="detail-overview" class="ov-grid"></div>
             <div id="detail-panel" class="detail-panel"></div>
+
+            <div id="detail-footer" class="detail-footer" hidden>
+              <p id="edit-error" class="error small" hidden></p>
+              <p id="edit-message" class="muted small" aria-live="polite"></p>
+              <div id="edit-progress" hidden></div>
+              <div class="stage-actions form-actions">
+                <button type="button" id="edit-save">Save</button>
+                <button type="button" id="edit-apply" class="primary">
+                  Save and apply
+                </button>
+                <button
+                  type="button"
+                  id="edit-rebuild"
+                  hidden
+                  title="Saves, then builds the PHP image again from nothing and restarts the project. Use it when an extension does not work or a build was stuck."
+                >
+                  Rebuild PHP container
+                </button>
+              </div>
+            </div>
           </section>
 
           <section class="card bare view-settings" id="settings-card">
             <div class="page-head">
               <div>
+                <span class="eyebrow">system / preferences</span>
                 <h1>Settings</h1>
-                <p>
-                  App settings. Settings for one project are in its Settings
-                  tab.
-                </p>
+                <p>App settings. Settings for one project are in that project's Settings tab.</p>
               </div>
             </div>
-            <div class="card">
-              <h2>Appearance</h2>
-              <p class="muted small">Light, dark, or follow this computer.</p>
-              <div class="seg" role="group" aria-label="Theme">
-                <button
-                  type="button"
-                  data-theme-choice="system"
-                  aria-pressed="true"
-                >
-                  System
-                </button>
-                <button
-                  type="button"
-                  data-theme-choice="light"
-                  aria-pressed="false"
-                >
-                  Light
-                </button>
-                <button
-                  type="button"
-                  data-theme-choice="dark"
-                  aria-pressed="false"
-                >
-                  Dark
-                </button>
+            <div class="settings-layout">
+              <nav class="settings-nav" aria-label="Settings sections">
+                <button type="button" data-section="set-general" aria-current="true">General</button>
+                <button type="button" data-section="set-folder">Projects folder</button>
+                <button type="button" data-section="set-dockerfiles">Docker files</button>
+                <button type="button" data-section="set-docker">Docker engine</button>
+                <button type="button" data-section="set-versions">Versions</button>
+                <button type="button" data-section="set-about">About</button>
+              </nav>
+              <div class="settings-panel">
+                <section class="set-section" id="set-general">
+                  <h2 class="panel-title">Appearance</h2>
+                  <fieldset class="radio-list">
+                    <legend>Choose a theme for ProjectDockHub.</legend>
+                    <label><input type="radio" name="theme" value="system" data-theme-choice="system" /> Use system settings</label>
+                    <label><input type="radio" name="theme" value="light" data-theme-choice="light" /> Light</label>
+                    <label><input type="radio" name="theme" value="dark" data-theme-choice="dark" /> Dark</label>
+                  </fieldset>
+                </section>
+                <section class="set-section" id="set-folder">
+                  <h2 class="panel-title">Projects folder</h2>
+                  <p>New projects are saved in this folder. Projects you made earlier stay where they are.</p>
+                  <div class="folder-row">
+                    <label for="settings-projects-dir" class="sr-only">Projects folder path</label>
+                    <input id="settings-projects-dir" type="text" readonly />
+                    <button type="button" id="settings-change-dir">Browse…</button>
+                    <button type="button" id="settings-reset-dir" hidden>Use the default</button>
+                  </div>
+                </section>
+                <section class="set-section" id="set-dockerfiles">
+                  <h2 class="panel-title">Docker files</h2>
+                  <p>ProjectDockHub writes the Docker setup of each project (compose.json) here, one folder per project. They are made again when a project starts, so you do not need to edit them.</p>
+                  <div class="folder-row">
+                    <label for="settings-docker-dir" class="sr-only">Docker files folder</label>
+                    <input id="settings-docker-dir" type="text" readonly />
+                    <button type="button" id="settings-open-docker-dir">Open folder</button>
+                  </div>
+                </section>
+                <section class="set-section" id="set-docker">
+                  <div class="set-row-head">
+                    <h2 class="panel-title">Docker engine</h2>
+                    <span class="pill-status" id="settings-docker-pill" data-state="stopped"><span class="dot"></span><span id="settings-docker-text">Checking</span></span>
+                  </div>
+                  <label class="check-block" for="settings-stop-docker">
+                    <input id="settings-stop-docker" type="checkbox" checked />
+                    <span>
+                      <strong>Stop Docker when I exit ProjectDockHub</strong>
+                      <span>Exit (File menu or the tray icon) stops every container and closes Docker Desktop, so it no longer uses memory. Closing the window does not exit. Containers of other tools stop too.</span>
+                    </span>
+                  </label>
+                  <div class="check-block info">
+                    <span class="info-mark" aria-hidden="true">i</span>
+                    <span>
+                      <strong>Stopping a project stops all of its containers</strong>
+                      <span>Stop on a project stops nginx, php, the database and every other service in it.</span>
+                    </span>
+                  </div>
+                  <div><button type="button" class="btn-sm" id="settings-check-docker">Check Docker again</button></div>
+                </section>
+                <section class="set-section set-inline" id="set-versions">
+                  <div>
+                    <h2 class="panel-title">Versions</h2>
+                    <p>Add PHP, Node, MySQL and other versions without changing any code.</p>
+                    <p id="settings-message" class="muted small" aria-live="polite"></p>
+                  </div>
+                  <button type="button" class="btn-sm" id="settings-versions-btn">Open versions file</button>
+                </section>
+                <section class="set-section set-about" id="set-about">
+                  <span class="about-mark" aria-hidden="true"
+                    ><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.8"><rect x="3" y="13" width="5" height="5" rx="1"></rect><rect x="9.5" y="13" width="5" height="5" rx="1"></rect><rect x="16" y="13" width="5" height="5" rx="1"></rect><rect x="9.5" y="6" width="5" height="5" rx="1"></rect></svg
+                  ></span>
+                  <div>
+                    <strong id="settings-about-name">ProjectDockHub</strong>
+                    <p id="settings-about" class="muted small">Loading...</p>
+                  </div>
+                </section>
               </div>
             </div>
-            <div class="card">
-              <h2>Projects folder</h2>
-              <p class="muted small">
-                New projects are saved in this folder. Projects you made earlier
-                stay where they are.
-              </p>
-              <p>
-                <strong id="settings-projects-dir" class="dir-path"></strong>
-              </p>
-              <div class="row-actions">
-                <button type="button" id="settings-change-dir">
-                  Change folder...
-                </button>
-                <button type="button" id="settings-reset-dir" hidden>
-                  Use the default
-                </button>
-              </div>
-            </div>
-            <div class="card">
-              <h2>Docker</h2>
-              <p class="muted small">
-                Stop on a project stops all containers of that project.
-              </p>
-              <label class="switch-row" for="settings-stop-docker">
-                <span class="switch-text">
-                  <strong>Stop Docker when I exit ProjectDockHub</strong>
-                  <span class="muted small"
-                    >Exit (in the File menu or the icon next to the clock)
-                    stops every container and closes Docker Desktop, so it
-                    no longer uses memory. Closing the window does not
-                    exit. Containers of other tools stop too.</span
-                  >
-                </span>
-                <input id="settings-stop-docker" type="checkbox" class="switch" checked />
-              </label>
-            </div>
-            <div class="card">
-              <h2>Versions</h2>
-              <p class="muted small">
-                Add PHP, Node, MySQL and other versions without changing any
-                code.
-              </p>
-              <div class="row-actions">
-                <button type="button" id="settings-versions-btn">
-                  Versions file
-                </button>
-              </div>
-              <p
-                id="settings-message"
-                class="muted small"
-                aria-live="polite"
-              ></p>
-            </div>
-            <div class="card">
-              <h2>About</h2>
-              <div class="about-row">
-                <img class="about-logo" src="assets/logo.png" alt="" />
-                <p id="settings-about" class="muted small">Loading...</p>
-              </div>
+            <div class="settings-bar">
+              <span class="muted small" id="settings-pending"></span>
+              <button type="button" id="settings-cancel" disabled>Cancel</button>
+              <button type="button" id="settings-apply" class="primary" disabled>Apply</button>
             </div>
           </section>
 
-          <section class="card narrow view-projects" id="edit-card" hidden>
-            <div class="card-head">
+          <section class="card narrow view-projects settings-tab" id="edit-card" hidden>
+            <div class="card-head" hidden>
               <h2 id="edit-title">Edit services</h2>
               <button id="edit-close" type="button">Close</button>
             </div>
@@ -1176,25 +1049,15 @@
 
             <div id="edit-composer-help" class="form-section"></div>
 
+            <div class="form-section danger-zone">
+              <div class="form-section-head">
+                <h3>Danger zone</h3>
+                <p class="small" id="edit-danger-text">Delete stops and removes the containers of this project.</p>
+              </div>
+              <button type="button" class="danger-outline" id="edit-delete">Delete project...</button>
+            </div>
             <div id="edit-slow-tip" class="form-section"></div>
 
-            <p id="edit-error" class="error small" hidden></p>
-            <p id="edit-message" class="muted small" aria-live="polite"></p>
-            <div class="stage-actions form-actions">
-              <button type="button" id="edit-save">Save</button>
-              <button type="button" id="edit-apply" class="primary">
-                Save and apply
-              </button>
-              <button
-                type="button"
-                id="edit-rebuild"
-                hidden
-                title="Saves, then builds the PHP image again from nothing and restarts the project. Use it when an extension does not work or a build was stuck."
-              >
-                Rebuild PHP container
-              </button>
-            </div>
-            <div id="edit-progress" hidden></div>
           </section>
 
           <section class="card narrow view-projects" id="links-card" hidden>
@@ -1213,8 +1076,8 @@
             <p id="links-message" class="muted small" aria-live="polite"></p>
           </section>
 
-          <section class="card narrow view-projects" id="volumes-card" hidden>
-            <div class="card-head">
+          <section class="card bare view-projects tab-page" id="volumes-card" hidden>
+            <div class="card-head" hidden>
               <h2 id="volumes-title">Volumes</h2>
               <div class="row-actions">
                 <button id="volumes-refresh" type="button">Refresh</button>
@@ -1222,6 +1085,31 @@
               </div>
             </div>
             <div id="volumes-body" class="vol-body"></div>
+          </section>
+
+          <section class="panel view-projects logview" id="logview-card" hidden>
+            <div class="panel-toolbar">
+              <div class="chip-row" id="lv-chips" role="group" aria-label="Service"></div>
+              <label class="field-search sm push-right">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+                <span class="sr-only">Filter log lines</span>
+                <input id="lv-filter" type="search" placeholder="Filter lines" autocomplete="off" />
+              </label>
+            </div>
+            <div class="lv-bar">
+              <span class="live" id="lv-live"><span class="dot"></span><span id="lv-live-text">Live</span></span>
+              <label class="check-sm"><input type="checkbox" id="lv-follow" checked /> Follow</label>
+              <label class="check-sm"><input type="checkbox" id="lv-ts" checked /> Timestamps</label>
+              <label class="check-sm"><input type="checkbox" id="lv-warn" /> Warnings only</label>
+              <div class="push-right toolbar-actions">
+                <button type="button" class="btn-xs" id="lv-refresh">Refresh</button>
+                <button type="button" class="btn-xs" id="lv-copy">Copy</button>
+                <button type="button" class="btn-xs" id="lv-clear">Clear view</button>
+              </div>
+            </div>
+            <p class="error small lv-error" id="lv-error" role="alert"></p>
+            <div class="lv-body" id="lv-body" tabindex="0" aria-label="Log lines"></div>
+            <div class="lv-foot"><span id="lv-foot-left"></span><span id="lv-foot-right"></span></div>
           </section>
 
           <section class="card narrow view-projects" id="logs-card" hidden>
@@ -1248,24 +1136,77 @@
             <pre id="logs-output" class="logs"></pre>
           </section>
 
-          <section class="card narrow view-projects" id="cred-card" hidden>
-            <div class="card-head">
+          <section class="card bare view-projects tab-page" id="cred-card" hidden>
+            <div class="card-head" hidden>
               <h2 id="cred-title">Credentials &amp; .env</h2>
               <button id="cred-close" type="button">Close</button>
             </div>
             <div id="cred-body" class="cred-body"></div>
           </section>
 
-          <section class="card view-system" id="containers-card">
-            <div class="card-head">
-              <h2>Containers</h2>
-              <button id="refresh-containers" type="button">Refresh</button>
+          <section class="card bare view-system" id="containers-card">
+            <div class="page-head">
+              <div>
+                <span class="eyebrow">local / containers</span>
+                <h1>Containers</h1>
+                <p>Every container ProjectDockHub runs, grouped by project.</p>
+              </div>
+              <div class="row-actions">
+                <button id="refresh-containers" type="button">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg>
+                  Refresh
+                </button>
+              </div>
             </div>
-            <ul id="container-list" class="plain"></ul>
+            <div class="summary-strip">
+              <div><span class="ss-label">Containers</span><span class="ss-value" id="cs-total">0</span></div>
+              <div><span class="ss-label"><span class="dot ok"></span>Running</span><span class="ss-value" id="cs-running">0</span></div>
+              <div><span class="ss-label"><span class="dot off"></span>Exited</span><span class="ss-value" id="cs-exited">0</span></div>
+            </div>
+            <div class="panel">
+              <div class="panel-toolbar">
+                <label class="field-search">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+                  <span class="sr-only">Search containers</span>
+                  <input id="container-search" type="search" placeholder="Search" autocomplete="off" />
+                </label>
+                <label class="check-inline"><input type="checkbox" id="only-running-containers" /> Only show running containers</label>
+                <div class="push-right toolbar-actions">
+                  <button type="button" class="btn-sm" id="stop-selected" disabled>Stop selected</button>
+                  <button type="button" class="btn-sm" id="delete-selected" disabled>Delete selected</button>
+                </div>
+              </div>
+              <div class="table-scroll">
+                <table class="dtable ctable">
+                  <thead>
+                    <tr>
+                      <th class="col-check"><input type="checkbox" id="select-all-containers" aria-label="Select all containers" /></th>
+                      <th>Name</th>
+                      <th>Image</th>
+                      <th>Status</th>
+                      <th>Port(s)</th>
+                      <th>Uptime</th>
+                      <th class="col-actions">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="container-list"></tbody>
+                </table>
+              </div>
+              <div class="panel-foot" id="container-foot"></div>
+            </div>
+            <p id="container-message" class="muted small" role="status" aria-live="polite"></p>
           </section>
         </div>
       </main>
     </div>
+    <footer class="statusbar" id="statusbar" aria-label="Status">
+      <span class="sb-item" id="sb-engine"><span class="sb-dot" id="sb-dot" data-state="checking"></span><span id="sb-engine-text">Checking engine</span></span>
+      <span class="sb-item" id="sb-docker"></span>
+      <span class="sb-item" id="sb-stacks"></span>
+      <span class="sb-space"></span>
+      <span class="sb-item" id="sb-stop-exit"></span>
+      <span class="sb-item" id="sb-app"></span>
+    </footer>
     <div class="modal-backdrop" id="confirm-modal" hidden>
       <div
         class="modal"

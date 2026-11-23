@@ -1,5 +1,6 @@
 'use strict';
 
+const { LABELS, containerName, composeProject, volumeName: volumeNameOf } = require('../naming');
 const fs = require('fs');
 const path = require('path');
 
@@ -168,13 +169,13 @@ function generateCompose(project) {
   for (const svc of project.services) {
     const service = {
       image: svc.image,
-      container_name: `envhub-${project.name}-${svc.name}`,
+      container_name: containerName(project.name, svc.name),
       restart: 'unless-stopped',
       labels: {
-        'com.envhub.managed': 'true',
-        'com.envhub.project': project.name,
-        'com.envhub.service': svc.name,
-        'com.envhub.stack': stack,
+        [LABELS.managed]: 'true',
+        [LABELS.project]: project.name,
+        [LABELS.service]: svc.name,
+        [LABELS.stack]: stack,
       },
     };
 
@@ -209,14 +210,14 @@ function generateCompose(project) {
     // Named volumes keep database data when the container is recreated. They are labeled so
     // ProjectDockHub can find and remove them when the project is deleted.
     for (const v of svc.dataVolumes || []) {
-      const volumeName = `envhub-${project.name}-${svc.name}-${v.name}`;
+      const volumeName = volumeNameOf(project.name, svc.name, v.name);
       mounts.push({ type: 'volume', source: volumeName, target: v.target });
       volumes[volumeName] = {
         name: volumeName,
         labels: {
-          'com.envhub.managed': 'true',
-          'com.envhub.project': project.name,
-          'com.envhub.service': svc.name,
+          [LABELS.managed]: 'true',
+          [LABELS.project]: project.name,
+          [LABELS.service]: svc.name,
         },
       };
     }
@@ -240,7 +241,7 @@ function generateCompose(project) {
     services[svc.name] = service;
   }
 
-  const compose = { name: `envhub-${project.name}`, services };
+  const compose = { name: composeProject(project.name), services };
   if (Object.keys(volumes).length > 0) compose.volumes = volumes;
   return compose;
 }

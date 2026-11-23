@@ -1,5 +1,6 @@
 'use strict';
 
+const { writeTestPrefix } = require('../naming');
 const fs = require('fs');
 const path = require('path');
 
@@ -53,7 +54,7 @@ function setProjectsDir(folder, { dataDir } = {}) {
   }
   try {
     fs.mkdirSync(dir, { recursive: true });
-    const probe = path.join(dir, `.envhub-write-test-${process.pid}`);
+    const probe = path.join(dir, `${writeTestPrefix}${process.pid}`);
     fs.writeFileSync(probe, '');
     fs.rmSync(probe, { force: true });
   } catch (err) {
