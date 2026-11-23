@@ -4128,6 +4128,64 @@ button.stack-card.on {
   background: var(--selected-bg);
 }
 
+/* ---------- One-line messages with a close (x) button ---------- */
+
+.note-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 8px 10px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--dim);
+  border-radius: 6px;
+  background: var(--subtle);
+  font-size: 13px;
+  color: var(--fg-2);
+}
+
+.note-line[hidden] {
+  display: none;
+}
+
+.note-line[data-kind="error"] {
+  border-left-color: var(--danger);
+  background: var(--danger-bg);
+  color: var(--fg);
+}
+
+.note-line[data-kind="ok"] {
+  border-left-color: var(--ok-dot);
+  background: var(--ok-bg);
+  color: var(--fg);
+}
+
+.note-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+button.note-close {
+  flex: none;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+}
+
+button.note-close:hover:not(:disabled) {
+  background: var(--hover-bg);
+  color: var(--fg);
+}
+
 /* ---------- Narrow windows ---------- */
 
 /* The old layout turned the sidebar into icons below 1000px. Keep the labels down to 860px

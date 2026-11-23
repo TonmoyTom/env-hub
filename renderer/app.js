@@ -1350,6 +1350,23 @@ function setText(id, text) {
   byId(id).textContent = text;
 }
 
+// A one-line message with a close (x) button. Empty text hides it. `kind` is '', 'error' or 'ok'.
+function setNote(id, text, kind = '') {
+  const box = byId(id);
+  box.querySelector('.note-text').textContent = text || '';
+  box.dataset.kind = kind;
+  box.hidden = !text;
+}
+
+// Docker's own "error during connect ... dockerDesktopLinuxEngine" means: Docker Desktop is not running.
+function dockerErrorText(err) {
+  const text = ipcMessage(err);
+  if (/error during connect|cannot connect to the docker daemon|dockerDesktopLinuxEngine|docker daemon running/i.test(text)) {
+    return 'Docker is not running. Start Docker Desktop (or click Start Docker on the Projects page), then click Refresh.';
+  }
+  return text;
+}
+
 // ---------- The "..." menu of a project card ----------
 
 // A floating menu: it opens over the page, so the card never grows. One menu is shared by all cards.
@@ -2024,6 +2041,10 @@ async function loadProjects() {
     projectsView.containers = containers;
     // The Containers page shows ports from the project list, so it is drawn again with the new list.
     containersView.items = containers;
+    if (containers.length || !containersView.error) {
+      containersView.error = '';
+      setContainerMessage('');
+    }
     renderContainers();
   } catch (err) {
     renderProjectsError(err);
@@ -4653,9 +4674,8 @@ function renderDockerFiles(data) {
 
 async function loadDockerFiles(name) {
   const section = byId('edit-docker-files');
-  const message = byId('df-message');
   section.dataset.project = name;
-  message.textContent = '';
+  setNote('df-message', '');
   try {
     const data = await window.envhub.dockerFiles(name);
     if (section.dataset.project !== name) return;
@@ -4665,14 +4685,13 @@ async function loadDockerFiles(name) {
     if (section.dataset.project !== name) return;
     byId('df-body').textContent = '';
     byId('df-generate').disabled = true;
-    message.textContent = `Docker files: ${ipcMessage(err)}`;
+    setNote('df-message', `Docker files: ${ipcMessage(err)}`, 'error');
   }
 }
 
 async function generateDockerFilesNow() {
   const name = byId('edit-docker-files').dataset.project;
   const button = byId('df-generate');
-  const message = byId('df-message');
   if (!name) return;
   button.disabled = true;
   try {
@@ -4682,9 +4701,9 @@ async function generateDockerFilesNow() {
     if (res.written.length > 0) parts.push(`Created in ${res.folder}: ${res.written.join(', ')}.`);
     else parts.push('All files were already up to date. Nothing was changed.');
     if (res.backups.length > 0) parts.push(`Old files kept as: ${res.backups.join(', ')}.`);
-    message.textContent = parts.join(' ');
+    setNote('df-message', parts.join(' '), 'ok');
   } catch (err) {
-    message.textContent = `Could not write the Docker files: ${ipcMessage(err)}`;
+    setNote('df-message', `Could not write the Docker files: ${ipcMessage(err)}`, 'error');
   } finally {
     button.disabled = false;
   }
@@ -5084,8 +5103,8 @@ function containerPorts(c) {
   return project ? project.ports.filter((p) => p.service === c.service).map((port) => ({ project, port })) : [];
 }
 
-function setContainerMessage(text) {
-  byId('container-message').textContent = text;
+function setContainerMessage(text, kind = 'error') {
+  setNote('container-message', text, kind);
 }
 
 async function containerAction(c, action) {
@@ -5257,7 +5276,9 @@ function renderContainers() {
   body.textContent = '';
   if (!shown.length) {
     const empty = makeElement('p', 'muted');
-    empty.textContent = items.length ? 'No container matches this search.' : 'No ProjectDockHub containers yet. Start a project to create them.';
+    empty.textContent = items.length
+      ? 'No container matches this search.'
+      : containersView.error ? 'Could not read the containers from Docker.' : 'No ProjectDockHub containers yet. Start a project to create them.';
     body.appendChild(emptyTableRow(empty));
   }
   for (const [name, list] of groups) {
@@ -5275,9 +5296,12 @@ function renderContainers() {
 async function refreshContainers() {
   try {
     containersView.items = await window.envhub.listContainers();
+    containersView.error = '';
+    setContainerMessage('');
   } catch (err) {
     containersView.items = [];
-    setContainerMessage(`Could not load containers: ${ipcMessage(err)}`);
+    containersView.error = dockerErrorText(err);
+    setContainerMessage(`Could not load containers. ${containersView.error}`);
   }
   // Drop selections of containers that are gone.
   const keys = new Set(containersView.items.map(containerKey));
@@ -5566,6 +5590,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   byId('name-example').textContent = dockerName('shop', 'php');
   bindProjectsPage();
   bindContainersPage();
+  // Every message bar closes with its x button.
+  document.addEventListener('click', (event) => {
+    const close = event.target.closest('.note-close');
+    if (close) close.closest('.note-line').hidden = true;
+  });
   bindLogView();
   await loadRegistry();
   syncStackForm();
