@@ -4143,15 +4143,20 @@ function showProjectsDir(info) {
   byId('settings-projects-dir').value = info.projectsDir;
   byId('settings-docker-dir').value = info.dockerFilesDir || '';
   byId('settings-reset-dir').hidden = info.isDefault;
+  const wasDirty = settingsDirty();
   savedSettings.stopDockerOnExit = info.stopDockerOnExit !== false;
-  if (!settingsDirty()) byId('settings-stop-docker').checked = savedSettings.stopDockerOnExit;
+  savedSettings.askOnExit = info.askOnExit !== false;
+  if (!wasDirty) {
+    byId('settings-stop-docker').checked = savedSettings.stopDockerOnExit;
+    byId('settings-ask-exit').checked = savedSettings.askOnExit;
+  }
   paintStopOnExit(savedSettings.stopDockerOnExit);
   paintSettingsBar();
 }
 
 // ---------- Settings page: a list of sections, and Cancel / Apply for the theme and the exit choice ----------
 
-const savedSettings = { stopDockerOnExit: true };
+const savedSettings = { stopDockerOnExit: true, askOnExit: true };
 
 function pendingTheme() {
   const picked = document.querySelector('input[name="theme"]:checked');
@@ -4159,7 +4164,9 @@ function pendingTheme() {
 }
 
 function settingsDirty() {
-  return pendingTheme() !== readTheme() || byId('settings-stop-docker').checked !== savedSettings.stopDockerOnExit;
+  return pendingTheme() !== readTheme()
+    || byId('settings-stop-docker').checked !== savedSettings.stopDockerOnExit
+    || byId('settings-ask-exit').checked !== savedSettings.askOnExit;
 }
 
 function paintSettingsBar() {
@@ -4182,12 +4189,22 @@ async function applySettings() {
       say(`Could not save the setting: ${ipcMessage(err)}`);
     }
   }
+  const ask = byId('settings-ask-exit');
+  if (ask.checked !== savedSettings.askOnExit) {
+    try {
+      await window.envhub.setAskOnExit(ask.checked);
+      savedSettings.askOnExit = ask.checked;
+    } catch (err) {
+      say(`Could not save the setting: ${ipcMessage(err)}`);
+    }
+  }
   paintSettingsBar();
 }
 
 function cancelSettings() {
   applyTheme(readTheme());
   byId('settings-stop-docker').checked = savedSettings.stopDockerOnExit;
+  byId('settings-ask-exit').checked = savedSettings.askOnExit;
   paintSettingsBar();
 }
 
@@ -4203,6 +4220,7 @@ function paintSettingsDocker() {
 
 function bindSettingsPage() {
   for (const radio of document.querySelectorAll('input[name="theme"]')) radio.addEventListener('change', paintSettingsBar);
+  byId('settings-ask-exit').addEventListener('change', paintSettingsBar);
   byId('settings-apply').addEventListener('click', applySettings);
   byId('settings-cancel').addEventListener('click', cancelSettings);
   byId('settings-check-docker').addEventListener('click', () => checkDocker());

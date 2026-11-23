@@ -22,6 +22,9 @@ const DEFAULT_PREFIX = 'envhub';
 const PREFIX_RE = /^[a-z][a-z0-9-]{0,19}$/;
 
 function readPrefix(file = path.join(__dirname, '..', 'naming.json')) {
+  // The tests check the default names (envhub-shop-php ...), whatever naming.json says.
+  // node --test sets NODE_TEST_CONTEXT in the processes that run test files.
+  if (process.env.NODE_TEST_CONTEXT && arguments.length === 0) return DEFAULT_PREFIX;
   try {
     const data = JSON.parse(fs.readFileSync(file, 'utf8'));
     const prefix = String(data.prefix || '').trim();

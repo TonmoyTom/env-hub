@@ -46,6 +46,26 @@ test('settings: stopping Docker on exit is on by default and the choice is saved
   }
 });
 
+test('settings: Exit asks about Docker by default, and "do not ask again" is saved', () => {
+  const settings = require('../main/store/settings');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'envhub-settings-'));
+  try {
+    settings.init(dir);
+    assert.strictEqual(settings.askOnExit(), true);
+    settings.setAskOnExit(false);
+    settings.init(dir);
+    assert.strictEqual(settings.askOnExit(), false);
+    // An old settings file without the key still asks.
+    fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ stopDockerOnExit: false }));
+    settings.init(dir);
+    assert.strictEqual(settings.askOnExit(), true);
+    assert.strictEqual(settings.stopDockerOnExit(), false);
+    assert.throws(() => settings.setAskOnExit(1), /Invalid value/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('start Docker: Windows uses the installed Docker Desktop.exe, Mac uses open, Linux uses systemctl', () => {
   const { launchCommand, startDockerDesktop } = require('../main/docker/launch');
   const env = { ProgramFiles: 'C:\Program Files' };

@@ -138,6 +138,7 @@ function projectsSettings() {
     // Where ProjectDockHub keeps the compose file of each project (<app data>/projects/<name>/compose.json).
     dockerFilesDir: path.join(dataDir(), 'projects'),
     stopDockerOnExit: settings.stopDockerOnExit(),
+    askOnExit: settings.askOnExit(),
   };
 }
 
@@ -450,6 +451,10 @@ function registerIpcHandlers() {
   });
   handle('settings:resetProjectsDir', () => {
     settings.resetProjectsDir();
+    return projectsSettings();
+  });
+  handle('settings:setAskOnExit', (value) => {
+    settings.setAskOnExit(value);
     return projectsSettings();
   });
   handle('settings:setStopDockerOnExit', (value) => {
@@ -1210,17 +1215,63 @@ app.whenReady().then(() => {
   app.on('activate', () => showWindow());
 });
 
-// Exit also turns Docker off (Settings > Docker), so it stops using memory. The quit waits for that:
-// the first before-quit is held back, and the app quits for real when Docker has answered.
+// Exit asks whether Docker should stop too (Settings > Docker engine). Stopping Docker frees the memory it holds.
+// The quit waits for the answer and for Docker: the first before-quit is held back, and the app quits for real
+// when Docker has answered. "Do not ask again" saves the choice; Settings can turn the question on again.
 let dockerShutdown = 'no';
+let exitAsked = false;
+// The answer to the Exit question: 'stop' or 'keep' (null = not asked, the saved setting decides).
+let exitChoice = null;
+
 
 app.on('before-quit', (event) => {
+  // The question first, once per Exit. Cancel keeps the app open.
+  if (!exitAsked && dockerShutdown === 'no' && gotSingleInstanceLock && app.isReady() && settings.askOnExit()) {
+    event.preventDefault();
+    exitAsked = true;
+    const parent = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() ? mainWindow : undefined;
+    const options = {
+      type: 'question',
+      title: 'Exit ProjectDockHub',
+      message: 'Turn Docker off too?',
+      detail: 'Stop Docker: every container stops and Docker Desktop closes, so it no longer uses memory. Containers of other tools stop too.\n\nKeep Docker running: your projects keep running and can still be opened in the browser.',
+      buttons: ['Stop Docker and exit', 'Exit, keep Docker running', 'Cancel'],
+      defaultId: settings.stopDockerOnExit() ? 0 : 1,
+      cancelId: 2,
+      noLink: true,
+      checkboxLabel: 'Do not ask again (you can change it in Settings)',
+      checkboxChecked: false,
+    };
+    (parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options))
+      .then(({ response, checkboxChecked }) => {
+        if (response === 2) {
+          exitAsked = false;
+          return;
+        }
+        exitChoice = response === 0 ? 'stop' : 'keep';
+        if (checkboxChecked) {
+          try {
+            settings.setStopDockerOnExit(exitChoice === 'stop');
+            settings.setAskOnExit(false);
+          } catch (err) {
+            console.warn(`Could not save the exit choice: ${err.message}`);
+          }
+        }
+        app.quit();
+      })
+      .catch(() => {
+        exitAsked = false;
+      });
+    return;
+  }
+
   quitting = true;
   if (stopEvents) {
     stopEvents();
     stopEvents = null;
   }
-  if (dockerShutdown === 'no' && gotSingleInstanceLock && app.isReady() && settings.stopDockerOnExit()) {
+  const stopDocker = exitChoice ? exitChoice === 'stop' : settings.stopDockerOnExit();
+  if (dockerShutdown === 'no' && gotSingleInstanceLock && app.isReady() && stopDocker) {
     dockerShutdown = 'running';
     event.preventDefault();
     if (mainWindow) mainWindow.hide();

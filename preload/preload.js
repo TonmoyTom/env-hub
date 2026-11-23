@@ -52,6 +52,7 @@ const INVOKE = {
   resetProjectsDir: 'settings:resetProjectsDir',
   openDockerFilesDir: 'settings:openDockerFilesDir',
   setStopDockerOnExit: 'settings:setStopDockerOnExit',
+  setAskOnExit: 'settings:setAskOnExit',
   detectProject: 'project:detect',
   importProject: 'project:import',
 };
@@ -106,6 +107,7 @@ contextBridge.exposeInMainWorld('envhub', {
   resetProjectsDir: () => ipcRenderer.invoke(INVOKE.resetProjectsDir),
   openDockerFilesDir: () => ipcRenderer.invoke(INVOKE.openDockerFilesDir),
   setStopDockerOnExit: (value) => ipcRenderer.invoke(INVOKE.setStopDockerOnExit, value === true),
+  setAskOnExit: (value) => ipcRenderer.invoke(INVOKE.setAskOnExit, value === true),
   detectProject: (folder) => ipcRenderer.invoke(INVOKE.detectProject, folder),
   importProject: (input) => ipcRenderer.invoke(INVOKE.importProject, input),
   installPackages: (name) => ipcRenderer.invoke(INVOKE.installPackages, name),
