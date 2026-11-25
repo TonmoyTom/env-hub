@@ -292,7 +292,33 @@ function createProgressView(root) {
   track.setAttribute('role', 'progressbar');
   track.setAttribute('aria-valuemin', '0');
   track.setAttribute('aria-valuemax', '100');
-  root.append(title, track, detail, time, logButton, terminal, list);
+
+  // Minimize: only the title, the bar and the percent stay. The choice is remembered.
+  const head = makeElement('div', 'progress-head');
+  const percentText = makeElement('span', 'progress-percent');
+  const minimize = makeElement('button', 'progress-min');
+  minimize.type = 'button';
+  const MIN_KEY = 'progressMinimized';
+  const setMinimized = (on) => {
+    root.classList.toggle('progress-mini', on);
+    minimize.textContent = on ? 'Show details' : 'Minimize';
+    minimize.setAttribute('aria-expanded', on ? 'false' : 'true');
+    try {
+      localStorage.setItem(MIN_KEY, on ? '1' : '0');
+    } catch (err) {
+      // Not remembered, fine.
+    }
+  };
+  minimize.addEventListener('click', () => setMinimized(!root.classList.contains('progress-mini')));
+  head.append(title, percentText, minimize);
+  let startMinimized = false;
+  try {
+    startMinimized = localStorage.getItem(MIN_KEY) === '1';
+  } catch (err) {
+    startMinimized = false;
+  }
+  setMinimized(startMinimized);
+  root.append(head, track, detail, time, logButton, terminal, list);
   const logLines = [];
 
   let timer = null;
@@ -313,6 +339,7 @@ function createProgressView(root) {
     const percent = Math.max(0, Math.min(100, Math.round(value)));
     fill.style.width = `${percent}%`;
     track.setAttribute('aria-valuenow', String(percent));
+    percentText.textContent = percent > 0 ? `${percent}%` : '';
     return percent;
   }
 
@@ -761,12 +788,17 @@ function askDeleteProject(project) {
 }
 
 // A plain yes / no question in the same in-page dialog. Resolves true or false.
-function confirmDialog({ title, body, okLabel }) {
+// `cancelLabel` and `okClass` change the two buttons for this question only (a choice instead of a delete).
+function confirmDialog({ title, body, okLabel, cancelLabel = '', okClass = '' }) {
   return new Promise((resolve) => {
     const modal = byId('confirm-modal');
     const ok = byId('confirm-ok');
     const cancel = byId('confirm-cancel');
     const before = ok.textContent;
+    const beforeCancel = cancel.textContent;
+    const beforeClass = ok.className;
+    if (cancelLabel) cancel.textContent = cancelLabel;
+    if (okClass) ok.className = okClass;
     byId('confirm-title').textContent = title;
     const box = byId('confirm-body');
     box.textContent = '';
@@ -779,6 +811,8 @@ function confirmDialog({ title, body, okLabel }) {
     const finish = (value) => {
       modal.hidden = true;
       ok.textContent = before;
+      cancel.textContent = beforeCancel;
+      ok.className = beforeClass;
       ok.removeEventListener('click', onOk);
       cancel.removeEventListener('click', onCancel);
       document.removeEventListener('keydown', onKey, true);
@@ -982,6 +1016,58 @@ const ENV_TARGETS = [
   ['host', 'Outside Docker (on my computer)', 'Choose this only if you start the app yourself with Laragon, XAMPP, php artisan serve or npm run dev. The host is localhost. If your app runs in Docker and shows "No such file or directory" or "Connection refused", you picked the wrong one: switch to "Inside Docker".'],
 ];
 
+// One credentials card for a service, built from the service catalog.
+function catalogCard(projectName, card) {
+  const box = makeElement('div', 'cred-card catalog-card');
+  box.appendChild(credCardHead(card.label || card.name, card.name, card.known ? `${card.label} · ${card.image}` : card.image));
+  for (const f of card.fields || []) box.appendChild(credRow(f.label, f.value, { secret: f.secret === true }));
+  if (card.note) {
+    const note = makeElement('p', 'muted small catalog-note');
+    note.textContent = card.note;
+    box.appendChild(note);
+  }
+  if (card.env) {
+    let target = 'docker';
+    const seg = makeElement('div', 'seg');
+    const block = makeElement('pre', 'env-block catalog-env');
+    const hint = makeElement('p', 'muted small catalog-note');
+    const copy = makeElement('button', 'btn-xs');
+    copy.type = 'button';
+    copy.textContent = 'Copy .env lines';
+    const paint = () => {
+      for (const b of seg.children) b.setAttribute('aria-pressed', b.dataset.target === target ? 'true' : 'false');
+      const text = card.env[target];
+      block.textContent = text || '';
+      block.hidden = !text;
+      copy.disabled = !text;
+      hint.textContent = text ? '' : `${card.name} has no published port for this. Add the port in the Settings tab (Extra services), or use "Inside Docker".`;
+      hint.hidden = Boolean(text);
+    };
+    for (const [value, label] of [['docker', 'Inside Docker'], ['host', 'This computer']]) {
+      const b = addButton(seg, label, () => {
+        target = value;
+        paint();
+      });
+      b.dataset.target = value;
+    }
+    copy.addEventListener('click', (event) => copyWithFeedback(card.env[target] || '', event.currentTarget));
+    const tools = makeElement('div', 'catalog-tools');
+    tools.append(seg, copy);
+    box.append(tools, hint, block);
+    paint();
+  }
+  if (card.web) {
+    const row = makeElement('div', 'row-actions catalog-open');
+    const open = addButton(row, 'Open page', () => openService(projectName, card.name, card.label));
+    open.classList.add('btn-xs', 'primary-soft');
+    const url = makeElement('code', 'cred-url');
+    url.textContent = card.web.url;
+    row.prepend(url);
+    box.appendChild(row);
+  }
+  return box;
+}
+
 function renderCredentials(name, data) {
   const body = el.credBody;
   body.textContent = '';
@@ -1116,8 +1202,19 @@ function renderCredentials(name, data) {
     body.appendChild(section);
   }
 
-  // Services the user added by hand
-  if (data.extras.length > 0) {
+  // Services the user added by hand: one card each, from the service catalog.
+  if (data.extras.some((extra) => extra.card)) {
+    const section = credSection('Extra services', 'From the service catalog: what your app needs to connect. Inside Docker the host is the service name; from this computer it is 127.0.0.1 and the published port.');
+    const grid = makeElement('div', 'cred-grid');
+    for (const extra of data.extras) grid.appendChild(catalogCard(name, extra.card || extra));
+    section.appendChild(grid);
+    if (data.catalogError) {
+      const warn = makeElement('p', 'cred-warning small');
+      warn.textContent = `Your services catalog has an error and was skipped: ${data.catalogError}`;
+      section.appendChild(warn);
+    }
+    body.appendChild(section);
+  } else if (data.extras.length > 0) {
     const section = credSection('Extra services', 'Inside Docker, use the service name as the host. From this computer, use localhost and the port shown.');
     const grid = makeElement('div', 'cred-grid');
     for (const extra of data.extras) {
@@ -1563,7 +1660,7 @@ function shellService(project) {
 function healthBars(containers) {
   const box = makeElement('span', 'hbars');
   box.setAttribute('aria-hidden', 'true');
-  for (const c of containers) box.appendChild(makeElement('span', c.state === 'running' ? 'on' : 'off'));
+  for (const c of containers) box.appendChild(makeElement('span', c.state !== 'running' ? 'off' : c.health === 'unhealthy' ? 'bad' : 'on'));
   return box;
 }
 
@@ -1618,6 +1715,480 @@ function statusCell(state, text, strong = false) {
   return cell;
 }
 
+// The status of one container: Running, Unhealthy, Restarting, Exited (code 1) ... and a "Why?" button
+// when something is wrong, which explains it (exit code, health check, last log lines).
+function containerStatusCell(c, project) {
+  const up = c.state === 'running';
+  const box = makeElement('span', 'c-status');
+  let state = up ? 'running' : 'stopped';
+  let word = up ? 'Running' : String(c.state || 'stopped').replace(/^./, (x) => x.toUpperCase());
+  if (up && c.health === 'unhealthy') {
+    state = 'error';
+    word = 'Unhealthy';
+  } else if (up && c.health === 'starting') {
+    state = 'partly';
+    word = 'Starting';
+  } else if (up && c.health === 'healthy') {
+    word = 'Healthy';
+  } else if (c.state === 'restarting') {
+    state = 'error';
+    word = 'Restarting';
+  } else if (c.state === 'exited') {
+    const code = /^Exited \((\d+)\)/.exec(c.status || '');
+    if (code && code[1] !== '0' && code[1] !== '143' && code[1] !== '137') {
+      state = 'error';
+      word = `Exited (code ${code[1]})`;
+    }
+  }
+  box.appendChild(statusCell(state, word));
+  const wrong = state === 'error' || c.state === 'exited' || c.state === 'dead' || c.state === 'created';
+  if (wrong && project && c.service) {
+    const why = makeElement('button', 'why-btn');
+    why.type = 'button';
+    why.textContent = 'Why?';
+    why.title = `Why is ${c.service} ${word.toLowerCase()}?`;
+    why.addEventListener('click', (event) => {
+      event.stopPropagation();
+      showWhy(project, c.service);
+    });
+    box.appendChild(why);
+  }
+  return box;
+}
+
+const WHY_ICONS = { error: '✕', warn: '!', info: 'i', ok: '✓' };
+
+async function showWhy(project, service) {
+  const modal = byId('why-modal');
+  const body = byId('why-body');
+  setText('why-title', `${service} in ${project}`);
+  body.textContent = '';
+  const wait = makeElement('p', 'muted small');
+  wait.textContent = 'Reading the container state and its last log lines...';
+  body.appendChild(wait);
+  modal.hidden = false;
+  byId('why-close').focus();
+  let res;
+  try {
+    res = await window.envhub.containerWhy(project, service);
+  } catch (err) {
+    wait.textContent = `Could not read it: ${ipcMessage(err)}`;
+    return;
+  }
+  body.textContent = '';
+  const facts = [['State', res.state || '–']];
+  if (res.health) facts.push(['Health check', res.health]);
+  if (res.state !== 'running' && res.state !== 'missing') facts.push(['Exit code', String(res.exitCode)]);
+  if (res.restartCount) facts.push(['Restarts', String(res.restartCount)]);
+  if (res.command) facts.push(['Command', res.command]);
+  if (res.image) facts.push(['Image', res.image]);
+  body.appendChild(kvList(facts));
+  const list = makeElement('ul', 'why-list');
+  for (const f of res.findings || []) {
+    const li = makeElement('li', `why-item why-${f.level}`);
+    const icon = makeElement('span', 'why-icon');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = WHY_ICONS[f.level] || 'i';
+    const text = makeElement('div', 'why-text');
+    const what = makeElement('p', '');
+    what.textContent = f.text;
+    text.appendChild(what);
+    if (f.fix) {
+      const fix = makeElement('p', 'why-fix');
+      fix.textContent = f.fix;
+      text.appendChild(fix);
+    }
+    li.append(icon, text);
+    list.appendChild(li);
+  }
+  body.appendChild(list);
+  if (res.logs) {
+    const h = makeElement('h4', 'panel-title');
+    h.textContent = 'Last log lines';
+    const pre = makeElement('pre', 'why-logs');
+    pre.textContent = res.logs;
+    body.append(h, pre);
+    pre.scrollTop = pre.scrollHeight;
+  }
+  const actions = byId('why-actions-extra');
+  actions.textContent = '';
+  const copy = addButton(actions, 'Copy', (event) => copyWithFeedback(
+    [`${service} in ${project}: ${res.state}`, ...(res.findings || []).map((f) => `- ${f.text}${f.fix ? ` ${f.fix}` : ''}`), '', res.logs || ''].join('\n'),
+    event.currentTarget,
+  ));
+  copy.classList.add('btn-sm');
+  if (projectsView.list.some((p) => p.name === project)) {
+    const logs = addButton(actions, 'Open Logs tab', () => {
+      byId('why-modal').hidden = true;
+      openDetailTab(project, 'logs');
+    });
+    logs.classList.add('btn-sm');
+  }
+}
+
+// ---------- Disk & cleanup: docker system df and prune, for the whole Docker engine ----------
+
+const cleanupView = { usage: null, volumes: [], selected: new Set(), busy: false, loadedAt: 0, running: null };
+
+// One card per kind. Each button is a fixed prune kind in main/docker/cleanup.js; the text says what goes.
+const DU_CARDS = [
+  {
+    key: 'images', title: 'Images',
+    note: (u) => `${u.total} image${u.total === 1 ? '' : 's'}, ${u.active} used by a container`,
+    actions: [
+      { kind: 'dangling', label: 'Remove dangling', confirm: 'Images with no name (<none>), left over from builds and updates. Nothing uses them.' },
+      { kind: 'images', label: 'Remove unused images', danger: true, confirm: 'Every image no container uses, also stopped ones, is removed. Projects whose containers were deleted download or build their images again on the next start (this can take a while).' },
+    ],
+  },
+  {
+    key: 'containers', title: 'Containers',
+    note: (u) => `${u.total} container${u.total === 1 ? '' : 's'}, ${u.active} running`,
+    actions: [
+      { kind: 'containers', label: 'Remove stopped containers', danger: true, confirm: 'Every stopped container of every app is removed. Data in named volumes stays. ProjectDockHub projects create their containers again on the next start.' },
+    ],
+  },
+  {
+    key: 'volumes', title: 'Volumes',
+    note: (u) => `${u.total} volume${u.total === 1 ? '' : 's'}, ${u.active} in use`,
+    actions: [
+      { kind: 'volumes', label: 'Remove anonymous unused', confirm: 'Unnamed volumes no container uses are removed. Named volumes (database data) are not touched: pick those in the list below.' },
+    ],
+  },
+  {
+    key: 'build', title: 'Build cache',
+    note: (u) => `${u.total} cache entr${u.total === 1 ? 'y' : 'ies'}`,
+    actions: [
+      { kind: 'build', label: 'Clear build cache', confirm: 'The saved build steps are removed. The next build of an image (the PHP image, for example) takes longer once.' },
+    ],
+  },
+];
+
+function ownerText(owner) {
+  if (!owner) return '–';
+  if (owner.kind === 'app') {
+    const known = projectsView.list.some((p) => p.name === owner.project);
+    if (!owner.current) return `ProjectDockHub, old name ${owner.prefix}-${owner.project}`;
+    return known ? `Project ${owner.project}` : `Project ${owner.project} (deleted)`;
+  }
+  if (owner.kind === 'compose') return `Compose project ${owner.project}`;
+  if (owner.kind === 'anonymous') return 'Anonymous (no name)';
+  return 'Other';
+}
+
+// A volume of a project that still exists: removing it empties that project's database.
+function isLiveProjectVolume(v) {
+  return Boolean(v.owner && v.owner.kind === 'app' && v.owner.current && projectsView.list.some((p) => p.name === v.owner.project));
+}
+
+function paintDiskUsage() {
+  const grid = byId('du-grid');
+  grid.textContent = '';
+  const u = cleanupView.usage;
+  if (!u) {
+    setText('du-total', '–');
+    setText('du-free', '–');
+    return;
+  }
+  const total = DU_CARDS.reduce((sum, c) => sum + u[c.key].size, 0);
+  const free = DU_CARDS.reduce((sum, c) => sum + u[c.key].reclaimable, 0);
+  setText('du-total', formatBytes(total));
+  setText('du-free', formatBytes(free));
+  for (const card of DU_CARDS) {
+    const data = u[card.key];
+    const box = makeElement('div', 'du-card');
+    const head = makeElement('div', 'du-head');
+    const title = makeElement('span', 'du-title');
+    title.textContent = card.title;
+    const size = makeElement('span', 'du-size');
+    size.textContent = formatBytes(data.size);
+    head.append(title, size);
+    const bar = makeElement('div', 'du-bar');
+    bar.setAttribute('role', 'img');
+    const share = data.size > 0 ? Math.min(100, Math.round((data.reclaimable / data.size) * 100)) : 0;
+    bar.setAttribute('aria-label', `${share}% can be freed`);
+    const fill = makeElement('span', '');
+    fill.style.width = `${share}%`;
+    bar.appendChild(fill);
+    const note = makeElement('p', 'muted small');
+    note.textContent = card.note(data);
+    const freeLine = makeElement('p', 'du-free');
+    freeLine.textContent = data.reclaimable > 0 ? `${formatBytes(data.reclaimable)} can be freed` : 'Nothing to free';
+    const actions = makeElement('div', 'du-actions');
+    for (const action of card.actions) {
+      const button = makeElement('button', `btn-sm${action.danger ? ' danger-outline' : ''}`);
+      button.type = 'button';
+      button.textContent = action.label;
+      button.disabled = cleanupView.busy;
+      button.addEventListener('click', () => runPrune(action, card.title));
+      actions.appendChild(button);
+    }
+    const run = cleanupView.running;
+    if (run && run.key === card.key) {
+      box.classList.add('du-working');
+      box.append(head, bar, note, freeLine, pruneProgress(run));
+    } else {
+      box.append(head, bar, note, freeLine, actions);
+    }
+    grid.appendChild(box);
+  }
+}
+
+function paintUnusedVolumes() {
+  const body = byId('vol-list');
+  body.textContent = '';
+  const list = cleanupView.volumes;
+  setText('du-vols', cleanupView.loadedAt ? String(list.length) : '–');
+  if (!list.length) {
+    const empty = makeElement('p', 'muted');
+    empty.textContent = cleanupView.loadedAt ? 'No unused volumes. Every volume belongs to a container.' : 'Reading the volumes...';
+    const row = emptyTableRow(empty);
+    row.firstChild.colSpan = 4;
+    body.appendChild(row);
+  }
+  for (const v of list) {
+    const row = makeElement('tr', 'trow');
+    row.classList.toggle('selected', cleanupView.selected.has(v.name));
+    const checkCell = td('col-check');
+    const check = document.createElement('input');
+    check.type = 'checkbox';
+    check.checked = cleanupView.selected.has(v.name);
+    check.setAttribute('aria-label', `Select ${v.name}`);
+    check.addEventListener('change', () => {
+      if (check.checked) cleanupView.selected.add(v.name);
+      else cleanupView.selected.delete(v.name);
+      paintUnusedVolumes();
+    });
+    checkCell.appendChild(check);
+    const name = td('mono vol-name');
+    name.textContent = v.name;
+    name.title = v.name;
+    const owner = td('');
+    owner.textContent = ownerText(v.owner);
+    if (isLiveProjectVolume(v)) {
+      owner.classList.add('warn-text');
+      owner.title = 'This project still exists. Its data is in this volume.';
+    }
+    const size = td('num mono');
+    size.textContent = formatBytes(v.size);
+    row.append(checkCell, name, owner, size);
+    body.appendChild(row);
+  }
+  const picked = list.filter((v) => cleanupView.selected.has(v.name));
+  const button = byId('vol-remove');
+  button.disabled = picked.length === 0 || cleanupView.busy;
+  button.textContent = picked.length ? `Remove ${picked.length} selected (${formatBytes(picked.reduce((sum, v) => sum + v.size, 0))})` : 'Remove selected';
+  byId('vol-all').checked = list.length > 0 && picked.length === list.length;
+}
+
+async function refreshCleanup() {
+  setNote('cleanup-note', '');
+  try {
+    cleanupView.usage = await window.envhub.diskUsage();
+  } catch (err) {
+    cleanupView.usage = null;
+    setNote('cleanup-note', `Could not read the disk use: ${ipcMessage(err)}`, 'error');
+  }
+  paintDiskUsage();
+  // The volume list is slower (Docker measures every volume), so it comes second.
+  try {
+    cleanupView.volumes = await window.envhub.unusedVolumes();
+    const names = new Set(cleanupView.volumes.map((v) => v.name));
+    for (const name of [...cleanupView.selected]) if (!names.has(name)) cleanupView.selected.delete(name);
+  } catch (err) {
+    cleanupView.volumes = [];
+    setNote('cleanup-note', `Could not list the volumes: ${ipcMessage(err)}`, 'error');
+  }
+  cleanupView.loadedAt = Date.now();
+  paintUnusedVolumes();
+}
+
+function setCleanupBusy(busy) {
+  cleanupView.busy = busy;
+  byId('cleanup-refresh').disabled = busy;
+  paintDiskUsage();
+  paintUnusedVolumes();
+}
+
+// Docker's prune commands print nothing until they finish, so the progress comes from the disk use itself:
+// it is read again every 2 seconds, and the bar shows how much of the space that could be freed is gone.
+// "Remove dangling" and "Remove anonymous unused" free only part of it, so their bar only moves (no percent).
+const PRUNE_POLL_MS = 2000;
+const PRUNE_MEASURED = new Set(['build', 'images', 'containers']);
+
+function elapsedText(ms) {
+  const sec = Math.floor(ms / 1000);
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
+
+function pruneProgress(run) {
+  const wrap = makeElement('div', 'du-progress');
+  const track = makeElement('div', `du-ptrack${run.fraction === null ? ' indeterminate' : ''}`);
+  track.setAttribute('role', 'progressbar');
+  track.setAttribute('aria-label', run.label);
+  if (run.fraction !== null) {
+    track.setAttribute('aria-valuemin', '0');
+    track.setAttribute('aria-valuemax', '100');
+    track.setAttribute('aria-valuenow', String(Math.round(run.fraction * 100)));
+  }
+  const fill = makeElement('span', '');
+  if (run.fraction !== null) fill.style.width = `${Math.max(3, Math.round(run.fraction * 100))}%`;
+  track.appendChild(fill);
+  const line = makeElement('p', 'du-ptext');
+  const freed = run.freed > 0 ? `${formatBytes(run.freed)}${run.fraction !== null ? ` of ${formatBytes(run.target)}` : ''} freed` : 'Cleaning up';
+  const pct = run.fraction !== null ? ` · ${Math.round(run.fraction * 100)}%` : '';
+  line.textContent = `${run.done ? 'Done' : freed}${pct} · ${elapsedText((run.endedAt || Date.now()) - run.startedAt)}`;
+  wrap.append(track, line);
+  return wrap;
+}
+
+// Updates the bar and its text in place, so the moving bar does not start over every second.
+function updatePruneProgress(run) {
+  const wrap = document.querySelector('#du-grid .du-progress');
+  if (!wrap) {
+    paintDiskUsage();
+    return;
+  }
+  wrap.replaceWith(pruneProgressKeepingTrack(run, wrap));
+}
+
+function pruneProgressKeepingTrack(run, old) {
+  const fresh = pruneProgress(run);
+  if (run.fraction === null) {
+    // Keep the old moving bar element; only the text changes.
+    const track = old.querySelector('.du-ptrack');
+    fresh.replaceChild(track, fresh.querySelector('.du-ptrack'));
+    return fresh;
+  }
+  const track = old.querySelector('.du-ptrack');
+  track.querySelector('span').style.width = fresh.querySelector('.du-ptrack span').style.width;
+  track.setAttribute('aria-valuenow', String(Math.round(run.fraction * 100)));
+  fresh.replaceChild(track, fresh.querySelector('.du-ptrack'));
+  return fresh;
+}
+
+async function pollPrune(run) {
+  if (cleanupView.running !== run || run.done) return;
+  try {
+    const usage = await window.envhub.diskUsage();
+    if (cleanupView.running !== run || run.done) return;
+    const now = usage[run.key].reclaimable;
+    run.freed = Math.max(0, run.start - now);
+    if (run.measured && run.target > 0) run.fraction = Math.min(0.99, run.freed / run.target);
+  } catch (err) {
+    // Docker may be busy with the cleanup itself: keep the bar moving and try again.
+  }
+  updatePruneProgress(run);
+  run.timer = setTimeout(() => pollPrune(run), PRUNE_POLL_MS);
+}
+
+async function runPrune(action, title) {
+  const ok = await confirmDialog({ title: `${action.label}?`, body: action.confirm, okLabel: action.label });
+  if (!ok) return;
+  const card = DU_CARDS.find((c) => c.actions.includes(action));
+  const before = cleanupView.usage ? cleanupView.usage[card.key] : null;
+  const measured = PRUNE_MEASURED.has(action.kind) && before && before.reclaimable > 0;
+  const run = {
+    key: card.key,
+    label: action.label,
+    startedAt: Date.now(),
+    start: before ? before.reclaimable : 0,
+    target: before ? before.reclaimable : 0,
+    measured,
+    fraction: measured ? 0 : null,
+    freed: 0,
+    done: false,
+    timer: null,
+    ticker: null,
+  };
+  cleanupView.running = run;
+  setCleanupBusy(true);
+  setNote('cleanup-note', `${title}: cleaning up. This can take a few minutes; you can use other pages meanwhile.`);
+  // The time ticks every second; the freed space is read every 2 seconds.
+  run.ticker = setInterval(() => updatePruneProgress(run), 1000);
+  run.timer = setTimeout(() => pollPrune(run), PRUNE_POLL_MS);
+  let ok2 = false;
+  try {
+    const res = await window.envhub.pruneDocker(action.kind);
+    const freed = res.reclaimed > 0 ? res.reclaimed : run.freed;
+    const text = `${action.label}: done in ${elapsedText(Date.now() - run.startedAt)}. ${freed > 0 ? `${formatBytes(freed)} freed.` : 'Nothing was left to remove.'}`;
+    setNote('cleanup-note', text, 'ok');
+    addNotification({ text, kind: 'info', source: 'app' });
+    run.freed = freed;
+    ok2 = true;
+  } catch (err) {
+    setNote('cleanup-note', `${action.label}: ${ipcMessage(err)}`, 'error');
+  }
+  clearTimeout(run.timer);
+  clearInterval(run.ticker);
+  run.done = true;
+  run.endedAt = Date.now();
+  if (ok2) {
+    // A full bar for a moment, so the end is seen.
+    if (run.fraction !== null) run.fraction = 1;
+    updatePruneProgress(run);
+    await new Promise((resolve) => setTimeout(resolve, 900));
+  }
+  cleanupView.running = null;
+  setCleanupBusy(false);
+  refreshCleanup();
+}
+
+async function removeSelectedVolumes() {
+  const picked = cleanupView.volumes.filter((v) => cleanupView.selected.has(v.name));
+  if (!picked.length) return;
+  const live = [...new Set(picked.filter(isLiveProjectVolume).map((v) => v.owner.project))];
+  const warning = live.length
+    ? `\n\n${live.join(', ')} still exist${live.length === 1 ? 's' : ''}: the next start begins with an empty database for that service.`
+    : '';
+  const ok = await confirmDialog({
+    title: picked.length === 1 ? 'Remove this volume?' : `Remove ${picked.length} volumes?`,
+    body: `${picked.map((v) => v.name).join(', ')}\n\nThe data in ${picked.length === 1 ? 'it' : 'them'} is deleted for good.${warning}`,
+    okLabel: picked.length === 1 ? 'Remove volume' : 'Remove volumes',
+  });
+  if (!ok) return;
+  setCleanupBusy(true);
+  try {
+    const res = await window.envhub.removeVolumes(picked.map((v) => v.name));
+    for (const name of res.removed) cleanupView.selected.delete(name);
+    const freed = picked.filter((v) => res.removed.includes(v.name)).reduce((sum, v) => sum + v.size, 0);
+    const failed = res.failed.length ? ` Not removed: ${res.failed.map((f) => `${f.name} (${f.error})`).join('; ')}.` : '';
+    setNote('cleanup-note', `${res.removed.length} volume${res.removed.length === 1 ? '' : 's'} removed, ${formatBytes(freed)} freed.${failed}`, res.failed.length ? 'error' : 'ok');
+  } catch (err) {
+    setNote('cleanup-note', `Could not remove: ${ipcMessage(err)}`, 'error');
+  }
+  setCleanupBusy(false);
+  refreshCleanup();
+}
+
+function bindCleanupPage() {
+  byId('nav-cleanup').addEventListener('click', () => {
+    showView('cleanup');
+    // Read again when the page is opened, at most once a minute unless Refresh is clicked.
+    if (!cleanupView.busy && Date.now() - cleanupView.loadedAt > 60000) refreshCleanup();
+  });
+  byId('cleanup-refresh').addEventListener('click', () => refreshCleanup());
+  byId('vol-remove').addEventListener('click', removeSelectedVolumes);
+  byId('vol-all').addEventListener('change', (event) => {
+    cleanupView.selected.clear();
+    if (event.target.checked) for (const v of cleanupView.volumes) cleanupView.selected.add(v.name);
+    paintUnusedVolumes();
+  });
+  paintUnusedVolumes();
+}
+
+function bindWhyModal() {
+  const close = () => {
+    byId('why-modal').hidden = true;
+  };
+  byId('why-close').addEventListener('click', close);
+  byId('why-modal').addEventListener('click', (event) => {
+    if (event.target.id === 'why-modal') close();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !byId('why-modal').hidden) close();
+  });
+}
+
 function openShell(name, service) {
   window.envhub.projectShell(name, service)
     .catch((err) => setActionStatus(`Could not open a terminal: ${ipcMessage(err)}`, name, 'error'));
@@ -1643,8 +2214,7 @@ function containerChildRow(project, c) {
   const image = td('mono c-image');
   image.textContent = c.image || '—';
   const status = td();
-  const word = up ? 'Running' : String(c.state || 'stopped').replace(/^./, (x) => x.toUpperCase());
-  status.appendChild(statusCell(up ? 'running' : 'stopped', word));
+  status.appendChild(containerStatusCell(c, project.name));
   const ports = td('c-ports');
   const own = project.ports.filter((p) => p.service === c.service);
   if (own.length) for (const p of own) ports.appendChild(openPortLink(project, p));
@@ -2082,6 +2652,8 @@ function showView(view) {
   if (view !== 'detail') {
     stopOverviewRefresh();
     stopLogView();
+    stopMailView();
+    stopRequestsView();
   }
   const current = view === 'detail' ? 'projects' : view;
   for (const item of document.querySelectorAll('.nav-item[data-view]')) {
@@ -2178,6 +2750,14 @@ function bindProjectsPage() {
   byId('settings-change-dir').addEventListener('click', () => changeProjectsDir(false));
   byId('settings-reset-dir').addEventListener('click', () => changeProjectsDir(true));
   byId('settings-versions-btn').addEventListener('click', openVersionsFile);
+  byId('settings-catalog-btn').addEventListener('click', async () => {
+    try {
+      const res = await window.envhub.openCatalogFile();
+      if (res && res.ok === false) say(`Could not open the services catalog: ${res.error}`);
+    } catch (err) {
+      say(`Could not open the services catalog: ${ipcMessage(err)}`);
+    }
+  });
 
   byId('detail-back').addEventListener('click', backToProjects);
   byId('np-crumb-projects').addEventListener('click', hideCreateCard);
@@ -2276,6 +2856,9 @@ function renderDetail() {
   byId('detail-stop').hidden = !running;
   byId('detail-terminal').disabled = !running;
   document.querySelector('.tab[data-tab="settings"]').hidden = !project.editable;
+  // Mail and Redis tabs only for projects that have Mailpit / Redis.
+  // Found by name or by image, so an extra service running Mailpit / Redis counts too.
+  document.querySelector('.tab[data-tab="data"]').hidden = !(project.viewers && project.viewers.length);
   paintNote(byId('detail-note'), project.name);
 }
 
@@ -3191,12 +3774,20 @@ function setDetailTab(tab) {
   el.credCard.hidden = true;
   el.volumesCard.hidden = true;
   el.logViewCard.hidden = true;
+  el.mailViewCard.hidden = true;
+  el.redisViewCard.hidden = true;
   if (tab !== 'logs') stopLogView();
+  el.dataViewCard.hidden = true;
+  if (tab !== 'data') {
+    stopMailView();
+    stopRequestsView();
+  }
 
   const name = detailState.name;
   if (tab === 'services') openLinks(name);
   else if (tab === 'volumes') showVolumes(name);
   else if (tab === 'logs') showLogs(name);
+  else if (tab === 'data') showData(name);
   else if (tab === 'credentials') showConnection(name);
   else if (tab === 'settings') openEdit(name);
 
@@ -3703,6 +4294,11 @@ const CATALOG = {
     label: 'MinIO (file storage)', image: 'minio/minio:latest', ports: '9000,9001',
     env: 'MINIO_ROOT_USER=minioadmin\nMINIO_ROOT_PASSWORD=minioadmin',
     command: 'server /data --console-address :9001',
+  },
+  // The image only starts a shell. This lets other containers log in, then runs the queue and the server.
+  hylafax: {
+    label: 'HylaFAX (fax server)', image: 'neoseason/hylafax:nocfg', ports: '',
+    command: 'sh -c "grep -q \'^\\.\\*\' /var/spool/hylafax/etc/hosts.hfaxd || echo \'.*:21::\' >> /var/spool/hylafax/etc/hosts.hfaxd; faxq; exec hfaxd -d -i 4559"',
   },
 };
 const BUILTIN_LABELS = {
@@ -4291,6 +4887,7 @@ async function prepareExisting() {
   try {
     const found = await window.envhub.detectProject(typed);
     wizard.folder = found.folder;
+    wizard.composeFile = found.composeFile || '';
     if (!el.newName.value.trim()) el.newName.value = found.name;
     if (found.stack === 'docker' && found.language) {
       el.newStack.value = 'docker';
@@ -4367,6 +4964,26 @@ async function submitName(event) {
   el.nameError.hidden = true;
   wizard.mode = existing ? 'existing' : 'new';
   wizard.name = name;
+
+  // The folder has its own docker-compose.yml: it can run as it is, with nothing set up again.
+  if (existing && wizard.composeFile) {
+    const file = wizard.composeFile;
+    const useIt = await confirmDialog({
+      title: `Run ${file} as it is?`,
+      body: `This folder has its own ${file}. ProjectDockHub can run it unchanged: your services, ports, volumes and .env. The file is only read; ProjectDockHub adds its labels from a separate file, so Logs, Shell, Stats and "Why?" work.
+
+Or set the project up with ProjectDockHub's own services on the next page instead.`,
+      okLabel: `Run ${file}`,
+      cancelLabel: 'Set up with ProjectDockHub',
+      okClass: 'primary',
+    });
+    if (useIt) {
+      wizard.input = { name, stack: 'compose', folder: wizard.folder, composeFile: file };
+      wizard.created = false;
+      runCreate();
+      return;
+    }
+  }
   if (existing) syncStackForm();
   el.setupName.textContent = name;
   showStage('setup');
@@ -4493,6 +5110,7 @@ function createAnother() {
   el.existingFolder.value = '';
   wizard.mode = 'new';
   wizard.folder = '';
+  wizard.composeFile = '';
   document.querySelector('input[name="project-source"][value="new"]').checked = true;
   syncSourceForm();
   el.nameError.hidden = true;
@@ -4747,6 +5365,107 @@ const SERVICE_TILES = {
   node: ['ND', 'Front-end build and dev server', 'green'],
 };
 
+// ---------- Settings tab: choose the ports by hand ----------
+
+// One row per published port: service, localhost:[port] -> container port, the live check, and "Use this port".
+function renderPortEditor(name) {
+  const box = byId('edit-ports-list');
+  const project = projectsView.list.find((p) => p.name === name);
+  const ports = project ? project.ports : [];
+  byId('edit-ports').hidden = ports.length === 0;
+  box.textContent = '';
+  for (const port of ports) box.appendChild(portEditRow(name, port, isRunningProject(project)));
+}
+
+function portEditRow(name, port, running) {
+  const row = makeElement('div', 'port-edit');
+  const svc = makeElement('span', 'port-edit-svc');
+  svc.textContent = port.service;
+  const field = makeElement('label', 'port-edit-field');
+  const prefix = makeElement('span', 'mono muted');
+  prefix.textContent = 'localhost:';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.inputMode = 'numeric';
+  input.maxLength = 5;
+  input.value = String(port.host);
+  input.setAttribute('aria-label', `Port on this computer for ${port.service} (container port ${port.container})`);
+  const arrow = makeElement('span', 'mono muted');
+  arrow.textContent = `→ ${port.container}`;
+  field.append(prefix, input, arrow);
+  const status = makeElement('span', 'port-edit-status');
+  status.setAttribute('aria-live', 'polite');
+  const use = addButton(row, 'Use this port', () => usePort(name, port, input, status, use));
+  use.classList.add('btn-sm');
+  use.disabled = true;
+  row.prepend(svc, field, status);
+  row.appendChild(use);
+
+  let timer = null;
+  let asked = 0;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    use.disabled = true;
+    status.className = 'port-edit-status';
+    status.textContent = input.value.trim() === String(port.host) ? '' : 'Checking...';
+    if (input.value.trim() === String(port.host)) return;
+    timer = setTimeout(async () => {
+      const ask = ++asked;
+      try {
+        const res = await window.envhub.checkPort(name, port.service, port.container, input.value);
+        if (ask !== asked) return;
+        status.textContent = res.message;
+        status.classList.add(res.ok ? 'ok' : 'bad');
+        use.disabled = !res.ok || res.same === true;
+      } catch (err) {
+        if (ask !== asked) return;
+        status.textContent = `Could not check: ${ipcMessage(err)}`;
+        status.classList.add('bad');
+      }
+    }, 350);
+  });
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !use.disabled) use.click();
+  });
+  return row;
+}
+
+async function usePort(name, port, input, status, button) {
+  button.disabled = true;
+  try {
+    const res = await window.envhub.setPort(name, port.service, port.container, input.value);
+    if (!res.ok) {
+      status.textContent = res.message;
+      status.className = 'port-edit-status bad';
+      return;
+    }
+    const text = res.running
+      ? `${port.service} will open at localhost:${res.port}. The project still runs on ${port.host}: apply the change to use the new port.`
+      : `${port.service} now opens at localhost:${res.port} (from the next start).`;
+    setNote('edit-ports-note', text, 'ok');
+    const note = byId('edit-ports-note');
+    note.querySelector('.port-apply')?.remove();
+    if (res.running) {
+      const apply = makeElement('button', 'btn-xs port-apply primary');
+      apply.type = 'button';
+      apply.textContent = 'Apply now';
+      apply.addEventListener('click', () => {
+        setNote('edit-ports-note', '');
+        applyEdit(name);
+      });
+      note.insertBefore(apply, note.querySelector('.note-close'));
+    }
+    addNotification({ project: name, text: `${port.service}: port ${port.host} → ${res.port}`, kind: 'ok' });
+    await loadProjects();
+    renderPortEditor(name);
+  } catch (err) {
+    status.textContent = `Could not save: ${ipcMessage(err)}`;
+    status.className = 'port-edit-status bad';
+  } finally {
+    if (document.body.contains(button)) button.disabled = true;
+  }
+}
+
 function renderEdit(details) {
   editState.name = details.name;
   editState.running = details.running === true;
@@ -4792,6 +5511,7 @@ function renderEdit(details) {
   const dataCount = (listed.dataServices || []).length;
   const folderText = listed.imported ? 'Your project folder is kept.' : 'The project folder and its files are deleted too.';
   setText('edit-danger-text', `Delete stops and removes the ${services.length} container${services.length === 1 ? '' : 's'}.${dataCount ? ' You choose whether the database data goes too.' : ''} ${folderText} It asks before anything is removed.`);
+  renderPortEditor(details.name);
   el.editDbName.value = details.dbName || 'app';
   el.editDbUser.value = details.dbUser || 'app';
   el.editDbPass.value = details.dbPassword || '';
@@ -5114,6 +5834,883 @@ async function openLinks(name) {
   if (el.linksMessage.textContent === 'Loading...') el.linksMessage.textContent = '';
 }
 
+// ---------- Data tab: every service that has a viewer, in one place ----------
+
+// Which kinds of data the tab can show. The service catalog decides which service has which viewer.
+const VIEWER_INFO = {
+  mail: { label: 'Mail', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 7l9 6 9-6"></path></svg>' },
+  requests: { label: 'API requests', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h11M11 3l4 4-4 4"></path><path d="M20 17H9M13 13l-4 4 4 4"></path></svg>' },
+  keyvalue: { label: 'Key-value', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="8" ry="3"></ellipse><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"></path><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"></path></svg>' },
+};
+const dataView = { name: '', service: '', viewer: '' };
+// The service last opened in each project, so coming back to the tab shows the same one.
+const dataChoice = new Map();
+
+function paintDataServices(project) {
+  const box = byId('dv-services');
+  box.textContent = '';
+  for (const v of project.viewers || []) {
+    const info = VIEWER_INFO[v.viewer] || { label: v.viewer, icon: '' };
+    const button = makeElement('button', 'data-service');
+    button.type = 'button';
+    button.setAttribute('aria-pressed', v.service === dataView.service ? 'true' : 'false');
+    const mark = makeElement('span', `data-service-icon viewer-${v.viewer}`);
+    mark.innerHTML = info.icon;
+    const text = makeElement('span', 'data-service-text');
+    const name = makeElement('span', 'data-service-name');
+    name.textContent = v.service;
+    const kind = makeElement('span', 'data-service-kind');
+    kind.textContent = `${info.label} · ${v.label}`;
+    text.append(name, kind);
+    button.append(mark, text);
+    button.addEventListener('click', () => openDataService(project.name, v));
+    box.appendChild(button);
+  }
+}
+
+function openDataService(name, v) {
+  dataView.service = v.service;
+  dataView.viewer = v.viewer;
+  dataChoice.set(name, v.service);
+  const project = projectsView.list.find((p) => p.name === name);
+  if (project) paintDataServices(project);
+  stopMailView();
+  stopRequestsView();
+  el.mailViewCard.hidden = true;
+  el.redisViewCard.hidden = true;
+  el.reqViewCard.hidden = true;
+  if (v.viewer === 'mail') showMail(name, v.service);
+  else if (v.viewer === 'keyvalue') showRedis(name, v.service);
+  else if (v.viewer === 'requests') showRequests(name, v.service);
+}
+
+function showData(name) {
+  const project = projectsView.list.find((p) => p.name === name);
+  const viewers = (project && project.viewers) || [];
+  ensureProjectsView();
+  mountPanel(el.dataViewCard);
+  el.dataViewCard.hidden = false;
+  dataView.name = name;
+  if (!viewers.length) {
+    byId('dv-services').textContent = '';
+    byId('dv-body').textContent = '';
+    return;
+  }
+  const wanted = dataChoice.get(name);
+  const pick = viewers.find((v) => v.service === wanted) || viewers[0];
+  openDataService(name, pick);
+}
+
+// ---------- Requests viewer: what an app sent to a fake API (Smocker) ----------
+
+const reqView = { name: '', service: '', items: [], selected: -1, query: '', timer: null, info: null };
+const REQ_REFRESH_MS = 4000;
+
+function stopRequestsView() {
+  clearTimeout(reqView.timer);
+  reqView.timer = null;
+}
+
+function methodTag(method) {
+  const tag = makeElement('span', `method-tag method-${String(method).toLowerCase()}`);
+  tag.textContent = method || '?';
+  return tag;
+}
+
+function shownRequests() {
+  const needle = reqView.query.trim().toLowerCase();
+  if (!needle) return reqView.items;
+  return reqView.items.filter((r) => `${r.method} ${r.path} ${r.query} ${r.body}`.toLowerCase().includes(needle));
+}
+
+function paintRequestList() {
+  const list = byId('qv-list');
+  list.textContent = '';
+  const items = shownRequests();
+  for (const r of items) {
+    const li = makeElement('li', `mail-item req-item ${r.i === reqView.selected ? 'on' : ''}`.trim());
+    li.tabIndex = 0;
+    li.setAttribute('role', 'button');
+    const top = makeElement('div', 'mail-top');
+    const left = makeElement('span', 'req-line');
+    const path = makeElement('span', 'req-path mono');
+    path.textContent = `${r.path}${r.query ? `?${r.query}` : ''}`;
+    left.append(methodTag(r.method), path);
+    const time = makeElement('time', 'mail-time');
+    time.textContent = r.at ? mailTime(r.at) : '';
+    if (r.at) time.title = new Date(r.at).toLocaleString();
+    top.append(left, time);
+    const meta = makeElement('span', 'mail-snippet');
+    meta.textContent = `${r.status ? `answered ${r.status}` : 'no answer'}${r.mocked ? '' : ' (no rule matched)'} · ${r.body ? r.body.slice(0, 90) : 'no body'}`;
+    li.append(top, meta);
+    const open = () => openRequest(r.i);
+    li.addEventListener('click', open);
+    li.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        open();
+      }
+    });
+    list.appendChild(li);
+  }
+  if (!items.length) {
+    const empty = makeElement('li', 'mail-empty');
+    empty.textContent = reqView.query
+      ? 'No request matches this search.'
+      : 'No requests yet. Point your app\'s API URL (fax, SMS, payment) at this service; every call it makes shows here.';
+    list.appendChild(empty);
+  }
+  setText('qv-count', `${reqView.items.length} request${reqView.items.length === 1 ? '' : 's'}`);
+}
+
+function paintRequestEmptyDetail() {
+  const box = byId('qv-detail');
+  box.textContent = '';
+  const p = makeElement('p', 'detail-empty');
+  p.textContent = 'Pick a request on the left to see what the app sent.';
+  box.appendChild(p);
+}
+
+function openRequest(i) {
+  reqView.selected = i;
+  paintRequestList();
+  const r = reqView.items.find((x) => x.i === i);
+  const box = byId('qv-detail');
+  box.textContent = '';
+  if (!r) {
+    paintRequestEmptyDetail();
+    return;
+  }
+  const head = makeElement('div', 'mail-head');
+  const title = makeElement('h3', 'req-title');
+  const path = makeElement('span', 'mono');
+  path.textContent = r.path;
+  title.append(methodTag(r.method), path);
+  head.appendChild(title);
+  const rows = [['When', r.at ? new Date(r.at).toLocaleString() : '–', false], ['Answer', r.status ? `${r.status}${r.mocked ? '' : ' (no rule matched: Smocker answers 666)'}` : '–', false]];
+  if (r.query) rows.push(['Query', r.query]);
+  if (r.origin) rows.push(['From', r.origin]);
+  head.appendChild(kvList(rows));
+  const copy = addButton(head, 'Copy body', (event) => copyWithFeedback(r.body, event.currentTarget));
+  copy.classList.add('btn-xs', 'mail-delete');
+  copy.disabled = !r.body;
+  box.appendChild(head);
+
+  const section = (label, content) => {
+    const wrap = makeElement('div', 'req-section');
+    const h = makeElement('h4', 'panel-title');
+    h.textContent = label;
+    wrap.append(h, content);
+    box.appendChild(wrap);
+  };
+  const body = makeElement('pre', 'mail-text');
+  body.textContent = r.body ? prettyValue(r.body) : '(no body)';
+  section('Request body', body);
+  const headers = Object.entries(r.headers || {});
+  if (headers.length) section('Request headers', valueTable(['Header', 'Value'], headers));
+  const answer = makeElement('pre', 'mail-text');
+  answer.textContent = r.responseBody ? prettyValue(r.responseBody) : '(empty)';
+  section(`Answer sent to the app (${r.status || '–'})`, answer);
+}
+
+async function refreshRequestsView() {
+  const { name, service } = reqView;
+  if (!name) return;
+  stopRequestsView();
+  try {
+    const items = await window.envhub.requestsList(name, service);
+    if (reqView.name !== name || reqView.service !== service) return;
+    reqView.items = items;
+    setNote('qv-error', '');
+    paintRequestList();
+    if (reqView.selected >= 0 && !items.some((r) => r.i === reqView.selected)) {
+      reqView.selected = -1;
+      paintRequestEmptyDetail();
+    }
+  } catch (err) {
+    if (reqView.name !== name) return;
+    reqView.items = [];
+    paintRequestList();
+    setNote('qv-error', ipcMessage(err), 'error');
+  }
+  if (document.body.dataset.view === 'detail' && detailState.tab === 'data' && detailState.name === name && dataView.viewer === 'requests') {
+    reqView.timer = setTimeout(refreshRequestsView, REQ_REFRESH_MS);
+  }
+}
+
+function paintRequestsConnect() {
+  const info = reqView.info;
+  const box = byId('qv-connect-env');
+  box.textContent = '';
+  if (!info) {
+    setText('qv-connect-note', 'Loading...');
+    return;
+  }
+  const lines = [`FAX_API_URL=http://${info.service}:8080`];
+  for (const line of lines) {
+    const row = makeElement('div', '');
+    const at = line.indexOf('=');
+    const key = makeElement('span', 'env-key');
+    key.textContent = line.slice(0, at);
+    const eq = makeElement('span', 'env-eq');
+    eq.textContent = '=';
+    const value = makeElement('span', 'env-val');
+    value.textContent = line.slice(at + 1);
+    row.append(key, eq, value);
+    box.appendChild(row);
+  }
+  setText('qv-connect-note', `Use http://${info.service}:8080 as the API address of your provider (fax, SMS, payment) in the app's settings. The variable name depends on your package; FAX_API_URL is an example.${info.apiPort ? ` From this computer: http://127.0.0.1:${info.apiPort}.` : ''}`);
+  const open = byId('qv-open');
+  open.disabled = !info.adminPort;
+  open.title = info.adminPort ? 'Open Smocker\'s own page' : `${info.service} has no port 8081 on this computer. Add it in the Settings tab (Extra services) to open the page. This tab works without it.`;
+}
+
+async function showRequests(name, service) {
+  if (reqView.name !== name || reqView.service !== service) {
+    Object.assign(reqView, { name, service, items: [], selected: -1, query: '', info: null });
+    byId('qv-search').value = '';
+    paintRequestEmptyDetail();
+  }
+  byId('dv-body').appendChild(el.reqViewCard);
+  el.reqViewCard.hidden = false;
+  paintRequestsConnect();
+  window.envhub.requestsInfo(name, service).then((info) => {
+    if (reqView.name === name && reqView.service === service) {
+      reqView.info = info;
+      paintRequestsConnect();
+    }
+  }).catch((err) => setNote('qv-error', ipcMessage(err), 'error'));
+  await refreshRequestsView();
+}
+
+function bindRequestsView() {
+  byId('qv-search').addEventListener('input', (event) => {
+    reqView.query = event.target.value;
+    paintRequestList();
+  });
+  byId('qv-refresh').addEventListener('click', refreshRequestsView);
+  byId('qv-ok').addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    try {
+      await window.envhub.requestsAnswerOk(reqView.name, reqView.service);
+      setNote('qv-error', 'Every request now gets 200 with {"status":"queued","id":"test-1"}. Your app sees the fax (or call) as sent.', 'ok');
+    } catch (err) {
+      setNote('qv-error', `Could not load the rule: ${ipcMessage(err)}`, 'error');
+    }
+    button.blur();
+  });
+  byId('qv-clear').addEventListener('click', async () => {
+    const ok = await confirmDialog({ title: 'Clear the caught requests?', body: 'The list is emptied. Smocker also forgets its answer rules: click "Answer every request with 200" again afterwards.', okLabel: 'Clear' });
+    if (!ok) return;
+    try {
+      await window.envhub.requestsReset(reqView.name, reqView.service);
+      reqView.selected = -1;
+      paintRequestEmptyDetail();
+      refreshRequestsView();
+    } catch (err) {
+      setNote('qv-error', `Could not clear: ${ipcMessage(err)}`, 'error');
+    }
+  });
+  byId('qv-open').addEventListener('click', () => {
+    if (reqView.info && reqView.info.adminPort) openService(reqView.name, reqView.service, 'Smocker');
+  });
+  byId('qv-connect-copy').addEventListener('click', (event) => copyWithFeedback(reqView.info ? `FAX_API_URL=http://${reqView.info.service}:8080` : '', event.currentTarget));
+}
+
+// ---------- Mail tab: the mails Mailpit caught ----------
+
+const mailView = { name: '', items: [], selected: '', query: '', timer: null, searchTimer: null };
+const MAIL_REFRESH_MS = 5000;
+
+function stopMailView() {
+  clearTimeout(mailView.timer);
+  mailView.timer = null;
+}
+
+function mailTime(iso) {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return '';
+  const minutes = (Date.now() - at) / 60000;
+  return minutes < 60 * 24 ? agoText(minutes, true) : new Date(at).toLocaleDateString();
+}
+
+function paintMailList() {
+  const list = byId('mv-list');
+  list.textContent = '';
+  for (const m of mailView.items) {
+    const li = makeElement('li', `mail-item ${m.read ? '' : 'unread'} ${m.id === mailView.selected ? 'on' : ''}`.trim());
+    li.tabIndex = 0;
+    li.setAttribute('role', 'button');
+    const top = makeElement('div', 'mail-top');
+    const from = makeElement('span', 'mail-from');
+    from.textContent = m.from || '(no sender)';
+    const time = makeElement('time', 'mail-time');
+    time.textContent = mailTime(m.created);
+    time.title = new Date(m.created).toLocaleString();
+    top.append(from, time);
+    const subject = makeElement('span', 'mail-subject');
+    if (m.attachments) {
+      const clip = makeElement('span', 'mail-clip');
+      clip.title = `${m.attachments} attachment${m.attachments === 1 ? '' : 's'}`;
+      clip.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11l-9 9a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8"></path></svg>';
+      subject.appendChild(clip);
+    }
+    subject.append(m.subject);
+    const snippet = makeElement('span', 'mail-snippet');
+    snippet.textContent = m.snippet;
+    li.append(top, subject, snippet);
+    const open = () => openMail(m.id);
+    li.addEventListener('click', open);
+    li.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        open();
+      }
+    });
+    list.appendChild(li);
+  }
+  if (!mailView.items.length) {
+    const empty = makeElement('li', 'mail-empty');
+    empty.textContent = mailView.query
+      ? 'No mail matches this search.'
+      : 'No mails yet. Mails your app sends (to any address) are caught here instead of being delivered.';
+    list.appendChild(empty);
+  }
+}
+
+async function refreshMailView() {
+  const name = mailView.name;
+  if (!name) return;
+  stopMailView();
+  try {
+    const data = await window.envhub.mailList(name, { search: mailView.query, service: mailView.service });
+    if (mailView.name !== name) return;
+    mailView.items = data.messages;
+    setText('mv-count', `${data.total} mail${data.total === 1 ? '' : 's'}${data.unread ? ` · ${data.unread} unread` : ''}`);
+    setNote('mv-error', '');
+    paintMailList();
+    if (!mailView.selected && !mailView.items.length) paintMailEmptyDetail();
+  } catch (err) {
+    if (mailView.name !== name) return;
+    mailView.items = [];
+    paintMailList();
+    setText('mv-count', '');
+    setNote('mv-error', ipcMessage(err), 'error');
+  }
+  if (document.body.dataset.view === 'detail' && detailState.tab === 'data' && detailState.name === name && dataView.viewer === 'mail') {
+    mailView.timer = setTimeout(refreshMailView, MAIL_REFRESH_MS);
+  }
+}
+
+function paintMailEmptyDetail() {
+  const box = byId('mv-detail');
+  box.textContent = '';
+  const p = makeElement('p', 'detail-empty');
+  p.textContent = 'Pick a mail on the left to read it.';
+  box.appendChild(p);
+}
+
+async function openMail(id) {
+  const name = mailView.name;
+  mailView.selected = id;
+  paintMailList();
+  const box = byId('mv-detail');
+  box.textContent = 'Loading...';
+  try {
+    const m = await window.envhub.mailRead(name, id, mailView.service);
+    if (mailView.name !== name || mailView.selected !== id) return;
+    box.textContent = '';
+    const head = makeElement('div', 'mail-head');
+    const subject = makeElement('h3', '');
+    subject.textContent = m.subject;
+    head.appendChild(subject);
+    head.appendChild(kvList([['From', m.from, false], ['To', m.to, false], ...(m.cc ? [['Cc', m.cc, false]] : []), ['Date', new Date(m.date).toLocaleString(), false]]));
+    if (m.attachments.length) {
+      const files = makeElement('p', 'muted small mail-files');
+      files.textContent = `Attachments: ${m.attachments.map((a) => `${a.name} (${a.size < 1e6 ? `${Math.max(1, Math.round(a.size / 1024))} KB` : formatBytes(a.size)})`).join(', ')}`;
+      head.appendChild(files);
+    }
+    const seg = makeElement('div', 'seg');
+    const view = makeElement('div', 'mail-view');
+    const show = (mode) => {
+      for (const b of seg.children) b.setAttribute('aria-pressed', b.dataset.mode === mode ? 'true' : 'false');
+      view.textContent = '';
+      if (mode === 'html' && m.html) {
+        // Mailpit's own page for this mail, in a frame without scripts, forms or popups. When Mailpit has no
+        // port on this computer, the mail's HTML itself goes into the same locked frame.
+        const frame = document.createElement('iframe');
+        frame.setAttribute('sandbox', '');
+        frame.setAttribute('referrerpolicy', 'no-referrer');
+        frame.title = `Mail: ${m.subject}`;
+        if (m.viewUrl) frame.src = m.viewUrl;
+        else frame.srcdoc = m.html;
+        view.appendChild(frame);
+      } else {
+        const pre = makeElement('pre', 'mail-text');
+        pre.textContent = m.text || '(This mail has no text part.)';
+        view.appendChild(pre);
+      }
+    };
+    for (const [mode, label] of [['html', 'HTML'], ['text', 'Text']]) {
+      const b = addButton(seg, label, () => show(mode));
+      b.dataset.mode = mode;
+      if (mode === 'html' && !m.html) b.disabled = true;
+    }
+    const del = addButton(head, 'Delete', async () => {
+      try {
+        await window.envhub.mailDelete(name, [id], mailView.service);
+        mailView.selected = '';
+        paintMailEmptyDetail();
+        refreshMailView();
+      } catch (err) {
+        setNote('mv-error', `Could not delete: ${ipcMessage(err)}`, 'error');
+      }
+    });
+    del.classList.add('btn-xs', 'danger-outline', 'mail-delete');
+    head.appendChild(seg);
+    box.append(head, view);
+    show(m.html ? 'html' : 'text');
+    // Reading marks it as read in Mailpit; show that in the list.
+    const item = mailView.items.find((x) => x.id === id);
+    if (item) {
+      item.read = true;
+      paintMailList();
+    }
+  } catch (err) {
+    box.textContent = '';
+    setNote('mv-error', `Could not read the mail: ${ipcMessage(err)}`, 'error');
+  }
+}
+
+// The .env lines an app needs to send its mail to this Mailpit.
+const mailConnect = { info: null, target: 'docker' };
+
+function mailEnvLines() {
+  const info = mailConnect.info;
+  if (!info) return '';
+  if (mailConnect.target === 'host') {
+    if (!info.smtpPort) return '';
+    return ['MAIL_MAILER=smtp', 'MAIL_HOST=127.0.0.1', `MAIL_PORT=${info.smtpPort}`, 'MAIL_USERNAME=null', 'MAIL_PASSWORD=null', 'MAIL_ENCRYPTION=null'].join('\n');
+  }
+  return ['MAIL_MAILER=smtp', `MAIL_HOST=${info.service}`, 'MAIL_PORT=1025', 'MAIL_USERNAME=null', 'MAIL_PASSWORD=null', 'MAIL_ENCRYPTION=null'].join('\n');
+}
+
+function paintMailConnect() {
+  const info = mailConnect.info;
+  for (const b of document.querySelectorAll('[data-mail-target]')) b.setAttribute('aria-pressed', b.dataset.mailTarget === mailConnect.target ? 'true' : 'false');
+  const box = byId('mv-connect-env');
+  box.textContent = '';
+  const text = mailEnvLines();
+  let note = '';
+  if (!info) note = 'Loading...';
+  else if (mailConnect.target === 'docker') note = `For an app that runs in this project (php, node, app). The host is the service name, ${info.service}. Mailpit needs no user and no password: every mail is caught here, nothing is delivered.`;
+  else if (info.smtpPort) note = `For an app you start yourself on this computer (php artisan serve, npm run dev). Port ${info.smtpPort} is published to this computer.`;
+  else note = `${info.service} has no SMTP port on this computer. Add port 1025 to it in the Settings tab (Extra services), or use "Inside Docker".`;
+  setText('mv-connect-note', note);
+  for (const line of text.split('\n').filter(Boolean)) {
+    const row = makeElement('div', '');
+    const at = line.indexOf('=');
+    const key = makeElement('span', 'env-key');
+    key.textContent = line.slice(0, at);
+    const eq = makeElement('span', 'env-eq');
+    eq.textContent = '=';
+    const value = makeElement('span', 'env-val');
+    value.textContent = line.slice(at + 1);
+    row.append(key, eq, value);
+    box.appendChild(row);
+  }
+  box.hidden = !text;
+  byId('mv-connect-copy').disabled = !text;
+  // The web page opens only when Mailpit's port 8025 is published.
+  const open = byId('mv-open');
+  open.disabled = Boolean(info) && !info.webPort;
+  open.title = info && !info.webPort ? `${info.service} has no port 8025 on this computer. Add it in the Settings tab (Extra services) to open the page. This tab works without it.` : 'Open Mailpit in the browser';
+}
+
+async function loadMailInfo(name) {
+  mailConnect.info = null;
+  paintMailConnect();
+  try {
+    const info = await window.envhub.mailInfo(name, mailView.service);
+    if (mailView.name === name) {
+      mailConnect.info = info;
+      paintMailConnect();
+    }
+  } catch (err) {
+    setNote('mv-error', ipcMessage(err), 'error');
+  }
+}
+
+async function showMail(name, service) {
+  if (mailView.name !== name || mailView.service !== service) {
+    Object.assign(mailView, { name, service, items: [], selected: '', query: '' });
+    byId('mv-search').value = '';
+    paintMailEmptyDetail();
+  }
+  // The mail viewer sits inside the Data tab.
+  byId('dv-body').appendChild(el.mailViewCard);
+  el.mailViewCard.hidden = false;
+  loadMailInfo(name);
+  await refreshMailView();
+}
+
+// ---------- Redis tab: keys and values ----------
+
+const redisView = { name: '', db: 0, pattern: '*', keys: [], selected: '', dbs: {}, searchTimer: null };
+
+function ttlText(ttl) {
+  if (ttl === -1) return 'no expiry';
+  if (ttl < 0) return '—';
+  if (ttl < 60) return `${ttl}s`;
+  if (ttl < 3600) return `${Math.floor(ttl / 60)}m`;
+  if (ttl < 86400) return `${Math.floor(ttl / 3600)}h ${Math.floor((ttl % 3600) / 60)}m`;
+  return `${Math.floor(ttl / 86400)}d`;
+}
+
+function paintRedisDbs() {
+  const select = byId('rv-db');
+  select.textContent = '';
+  for (let db = 0; db < 16; db += 1) {
+    const option = document.createElement('option');
+    option.value = String(db);
+    const count = redisView.dbs[db] || 0;
+    option.textContent = `db${db}${count ? ` · ${count} key${count === 1 ? '' : 's'}` : ''}`;
+    select.appendChild(option);
+  }
+  select.value = String(redisView.db);
+}
+
+function paintRedisKeys(more) {
+  const box = byId('rv-keys');
+  box.textContent = '';
+  if (!redisView.keys.length) {
+    const p = makeElement('p', 'detail-empty');
+    p.textContent = redisView.pattern !== '*' ? 'No key matches this pattern.' : `db${redisView.db} has no keys. Laravel keeps cache in db1 and sessions and queues in db0.`;
+    box.appendChild(p);
+    return;
+  }
+  const table = makeElement('table', 'dtable mini redis-table');
+  const head = makeElement('thead', '');
+  const hr = makeElement('tr', '');
+  for (const label of ['Key', 'Type', 'TTL']) {
+    const th = makeElement('th', '');
+    th.textContent = label;
+    hr.appendChild(th);
+  }
+  head.appendChild(hr);
+  const body = makeElement('tbody', '');
+  for (const k of redisView.keys) {
+    const row = makeElement('tr', `trow ${k.key === redisView.selected ? 'selected' : ''}`.trim());
+    row.tabIndex = 0;
+    const key = td('mono redis-key');
+    key.textContent = k.key;
+    key.title = k.key;
+    const type = td();
+    const tag = makeElement('span', `type-tag type-${k.type}`);
+    tag.textContent = k.type;
+    type.appendChild(tag);
+    const ttl = td('mono muted');
+    ttl.textContent = ttlText(k.ttl);
+    row.append(key, type, ttl);
+    row.addEventListener('click', () => openRedisKey(k.key));
+    row.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') openRedisKey(k.key);
+    });
+    body.appendChild(row);
+  }
+  table.append(head, body);
+  box.appendChild(table);
+  if (more) {
+    const p = makeElement('p', 'muted small redis-more');
+    p.textContent = 'Showing the first 500 keys. Use a pattern to narrow it down.';
+    box.appendChild(p);
+  }
+}
+
+async function refreshRedisView() {
+  const name = redisView.name;
+  if (!name) return;
+  try {
+    const overview = await window.envhub.redisOverview(name, redisView.service);
+    if (redisView.name !== name) return;
+    redisView.dbs = overview.dbs;
+    paintRedisDbs();
+    const total = Object.values(overview.dbs).reduce((a, b) => a + b, 0);
+    setText('rv-info', `${total} key${total === 1 ? '' : 's'} in all databases${overview.memory ? ` · ${overview.memory} used` : ''}`);
+    const res = await window.envhub.redisKeys(name, { db: redisView.db, pattern: redisView.pattern, service: redisView.service });
+    if (redisView.name !== name) return;
+    redisView.keys = res.keys;
+    setNote('rv-error', '');
+    paintRedisKeys(res.more);
+    if (redisView.selected && !res.keys.some((k) => k.key === redisView.selected)) {
+      redisView.selected = '';
+      paintRedisEmptyValue();
+    }
+  } catch (err) {
+    if (redisView.name !== name) return;
+    redisView.keys = [];
+    paintRedisKeys(false);
+    setNote('rv-error', ipcMessage(err), 'error');
+  }
+}
+
+function paintRedisEmptyValue() {
+  const box = byId('rv-value');
+  box.textContent = '';
+  const p = makeElement('p', 'detail-empty');
+  p.textContent = 'Pick a key on the left to see its value.';
+  box.appendChild(p);
+}
+
+// A string that is JSON is shown formatted; Laravel's serialized PHP values are shown as they are.
+function prettyValue(text) {
+  const value = String(text);
+  if (/^\s*[[{]/.test(value)) {
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2);
+    } catch (err) {
+      return value;
+    }
+  }
+  return value;
+}
+
+function valueTable(headers, rows) {
+  const table = makeElement('table', 'dtable mini value-table');
+  const head = makeElement('thead', '');
+  const hr = makeElement('tr', '');
+  for (const h of headers) {
+    const th = makeElement('th', '');
+    th.textContent = h;
+    hr.appendChild(th);
+  }
+  head.appendChild(hr);
+  const body = makeElement('tbody', '');
+  for (const cells of rows) {
+    const tr = makeElement('tr', 'trow');
+    for (const cell of cells) {
+      const c = td('mono');
+      c.textContent = cell;
+      tr.appendChild(c);
+    }
+    body.appendChild(tr);
+  }
+  table.append(head, body);
+  return table;
+}
+
+async function openRedisKey(key) {
+  const name = redisView.name;
+  redisView.selected = key;
+  for (const row of byId('rv-keys').querySelectorAll('tr.trow')) row.classList.toggle('selected', row.firstChild.textContent === key);
+  const box = byId('rv-value');
+  box.textContent = 'Loading...';
+  try {
+    const v = await window.envhub.redisValue(name, { db: redisView.db, key, service: redisView.service });
+    if (redisView.name !== name || redisView.selected !== key) return;
+    box.textContent = '';
+    const head = makeElement('div', 'value-head');
+    const title = makeElement('h3', 'mono');
+    title.textContent = v.key;
+    const meta = makeElement('div', 'value-meta');
+    const tag = makeElement('span', `type-tag type-${v.type}`);
+    tag.textContent = v.type;
+    const ttl = makeElement('span', 'muted small');
+    ttl.textContent = `TTL ${ttlText(v.ttl)}`;
+    meta.append(tag, ttl);
+    if (v.size !== null) {
+      const size = makeElement('span', 'muted small');
+      size.textContent = `${v.size} item${v.size === 1 ? '' : 's'}${v.size > 200 ? ' (first 200 shown)' : ''}`;
+      meta.appendChild(size);
+    }
+    const actions = makeElement('div', 'value-actions');
+    const copy = addButton(actions, 'Copy', (event) => copyWithFeedback(typeof v.value === 'string' ? v.value : JSON.stringify(v.value, null, 2), event.currentTarget));
+    copy.classList.add('btn-xs');
+    const del = addButton(actions, 'Delete key', async () => {
+      const ok = await confirmDialog({ title: 'Delete this key?', body: `${v.key}\n\nIt is removed from Redis db${redisView.db}. Laravel makes a cache key again when it needs it.`, okLabel: 'Delete key' });
+      if (!ok) return;
+      try {
+        await window.envhub.redisDelete(name, { db: redisView.db, key: v.key, service: redisView.service });
+        redisView.selected = '';
+        paintRedisEmptyValue();
+        refreshRedisView();
+      } catch (err) {
+        setNote('rv-error', `Could not delete: ${ipcMessage(err)}`, 'error');
+      }
+    });
+    del.classList.add('btn-xs', 'danger-outline');
+    head.append(title, meta, actions);
+    box.appendChild(head);
+    if (v.type === 'hash') box.appendChild(valueTable(['Field', 'Value'], v.value.map((r) => [r.field, prettyValue(r.value)])));
+    else if (v.type === 'zset') box.appendChild(valueTable(['Member', 'Score'], v.value.map((r) => [r.member, r.score])));
+    else if (v.type === 'list' || v.type === 'set') box.appendChild(valueTable([v.type === 'list' ? '#' : '', 'Value'], v.value.map((item, i) => [v.type === 'list' ? String(i) : '•', prettyValue(item)])));
+    else {
+      const pre = makeElement('pre', 'mail-text value-text');
+      pre.textContent = prettyValue(v.value);
+      box.appendChild(pre);
+    }
+  } catch (err) {
+    box.textContent = '';
+    setNote('rv-error', ipcMessage(err), 'error');
+  }
+}
+
+// The .env lines an app needs to use this Redis.
+const redisConnect = { info: null, target: 'docker', showPassword: false };
+
+function redisEnvLines(reveal = true) {
+  const info = redisConnect.info;
+  if (!info) return [];
+  if (redisConnect.target === 'host' && !info.hostPort) return [];
+  const host = redisConnect.target === 'host' ? '127.0.0.1' : info.service;
+  const port = redisConnect.target === 'host' ? info.hostPort : 6379;
+  const password = info.password ? (reveal ? info.password : '••••••••••••') : 'null';
+  const lines = ['REDIS_CLIENT=phpredis', `REDIS_HOST=${host}`, `REDIS_PASSWORD=${password}`, `REDIS_PORT=${port}`];
+  if (byId('rv-connect-laravel').checked) {
+    // Laravel 11+ reads CACHE_STORE, older versions CACHE_DRIVER: both are given, the other one is ignored.
+    lines.push('CACHE_STORE=redis', 'CACHE_DRIVER=redis', 'SESSION_DRIVER=redis', 'QUEUE_CONNECTION=redis');
+  }
+  return lines;
+}
+
+function paintRedisConnect() {
+  const info = redisConnect.info;
+  for (const b of document.querySelectorAll('[data-redis-target]')) b.setAttribute('aria-pressed', b.dataset.redisTarget === redisConnect.target ? 'true' : 'false');
+  setText('rv-connect-sub', info ? `(${info.service}:6379 · ${info.password ? 'with password' : 'no password'})` : '');
+  let note = 'Loading...';
+  if (info && redisConnect.target === 'docker') {
+    note = `For an app that runs in this project (php, node, app). The host is the service name, ${info.service}.`;
+  } else if (info && info.hostPort) {
+    note = `For an app or a tool (TablePlus, Redis Insight) on this computer. Port ${info.hostPort} is published to this computer.`;
+  } else if (info) {
+    note = `${info.service} has no port on this computer. Add port 6379 to it in the Settings tab, or use "Inside Docker".`;
+  }
+  setText('rv-connect-note', note);
+  const box = byId('rv-connect-env');
+  box.textContent = '';
+  const lines = redisEnvLines(redisConnect.showPassword);
+  for (const line of lines) {
+    const row = makeElement('div', '');
+    const at = line.indexOf('=');
+    const key = makeElement('span', 'env-key');
+    key.textContent = line.slice(0, at);
+    const eq = makeElement('span', 'env-eq');
+    eq.textContent = '=';
+    const value = makeElement('span', 'env-val');
+    value.textContent = line.slice(at + 1);
+    if (line.startsWith('REDIS_PASSWORD=') && info && info.password && redisConnect.showPassword) value.classList.add('env-secret');
+    row.append(key, eq, value);
+    box.appendChild(row);
+  }
+  box.hidden = lines.length === 0;
+  byId('rv-connect-copy').disabled = lines.length === 0;
+  const show = byId('rv-connect-show');
+  show.hidden = !(info && info.password);
+  show.textContent = redisConnect.showPassword ? 'Hide password' : 'Show password';
+}
+
+async function loadRedisInfo(name) {
+  redisConnect.info = null;
+  redisConnect.showPassword = false;
+  paintRedisConnect();
+  try {
+    const info = await window.envhub.redisInfo(name, redisView.service);
+    if (redisView.name === name) {
+      redisConnect.info = info;
+      paintRedisConnect();
+    }
+  } catch (err) {
+    setNote('rv-error', ipcMessage(err), 'error');
+  }
+}
+
+async function showRedis(name, service) {
+  if (redisView.name !== name || redisView.service !== service) {
+    Object.assign(redisView, { name, service, db: 0, pattern: '*', keys: [], selected: '', dbs: {} });
+    byId('rv-pattern').value = '';
+    paintRedisDbs();
+    paintRedisEmptyValue();
+  }
+  // The key-value viewer sits inside the Data tab.
+  byId('dv-body').appendChild(el.redisViewCard);
+  el.redisViewCard.hidden = false;
+  loadRedisInfo(name);
+  await refreshRedisView();
+}
+
+function bindDataTabs() {
+  byId('mv-search').addEventListener('input', (event) => {
+    clearTimeout(mailView.searchTimer);
+    mailView.searchTimer = setTimeout(() => {
+      mailView.query = event.target.value.trim();
+      refreshMailView();
+    }, 350);
+  });
+  byId('mv-refresh').addEventListener('click', refreshMailView);
+  for (const b of document.querySelectorAll('[data-mail-target]')) {
+    b.addEventListener('click', () => {
+      mailConnect.target = b.dataset.mailTarget;
+      paintMailConnect();
+    });
+  }
+  byId('mv-connect-copy').addEventListener('click', (event) => copyWithFeedback(mailEnvLines(), event.currentTarget));
+  byId('mv-open').addEventListener('click', () => {
+    const project = projectsView.list.find((p) => p.name === mailView.name);
+    openService(mailView.name, mailView.service || (project && project.mailService) || 'mailpit', 'Mailpit');
+  });
+  byId('mv-clear').addEventListener('click', async () => {
+    const ok = await confirmDialog({ title: 'Delete all mails?', body: 'Every mail Mailpit caught for this project is removed.', okLabel: 'Delete all' });
+    if (!ok) return;
+    try {
+      await window.envhub.mailDelete(mailView.name, 'all', mailView.service);
+      mailView.selected = '';
+      paintMailEmptyDetail();
+      refreshMailView();
+    } catch (err) {
+      setNote('mv-error', `Could not delete: ${ipcMessage(err)}`, 'error');
+    }
+  });
+  byId('rv-db').addEventListener('change', (event) => {
+    redisView.db = Number(event.target.value);
+    redisView.selected = '';
+    paintRedisEmptyValue();
+    refreshRedisView();
+  });
+  byId('rv-pattern').addEventListener('input', (event) => {
+    clearTimeout(redisView.searchTimer);
+    redisView.searchTimer = setTimeout(() => {
+      redisView.pattern = event.target.value.trim() || '*';
+      refreshRedisView();
+    }, 350);
+  });
+  byId('rv-refresh').addEventListener('click', refreshRedisView);
+  for (const b of document.querySelectorAll('[data-redis-target]')) {
+    b.addEventListener('click', () => {
+      redisConnect.target = b.dataset.redisTarget;
+      paintRedisConnect();
+    });
+  }
+  byId('rv-connect-laravel').addEventListener('change', paintRedisConnect);
+  byId('rv-connect-show').addEventListener('click', () => {
+    redisConnect.showPassword = !redisConnect.showPassword;
+    paintRedisConnect();
+  });
+  byId('rv-connect-copy').addEventListener('click', (event) => copyWithFeedback(redisEnvLines(true).join('\n'), event.currentTarget));
+  byId('rv-flush').addEventListener('click', async () => {
+    const db = redisView.db;
+    const ok = await confirmDialog({ title: `Flush db${db}?`, body: `Every key in Redis db${db} of ${redisView.name} is removed (cache, sessions or queues, whatever this database holds). Other databases stay.`, okLabel: `Flush db${db}` });
+    if (!ok) return;
+    try {
+      await window.envhub.redisFlush(redisView.name, { db, service: redisView.service });
+      redisView.selected = '';
+      paintRedisEmptyValue();
+      refreshRedisView();
+    } catch (err) {
+      setNote('rv-error', `Could not flush: ${ipcMessage(err)}`, 'error');
+    }
+  });
+}
+
 // ---------- Notifications: the bell in the top bar and the Notifications page ----------
 
 // Every action message (started, stopped, errors) and the container events Docker reports, newest first.
@@ -5163,10 +6760,39 @@ function addNotification({ project = '', text, kind = 'info', source = 'app' }) 
 const DOCKER_EVENT_WORDS = { start: 'started', stop: 'stopped', restart: 'restarted', destroy: 'removed', die: 'exited' };
 const pendingDies = new Map();
 
+// A container that dies 3 times within 2 minutes is in a restart loop: one error notification, not a warning each time.
+const RESTART_LOOP_COUNT = 3;
+const RESTART_LOOP_MS = 2 * 60 * 1000;
+const recentDies = new Map();
+const loopReported = new Map();
+
+function watchRestartLoop(change, who) {
+  const key = change.name || `${change.project}/${who}`;
+  const now = Date.now();
+  const times = (recentDies.get(key) || []).filter((t) => now - t < RESTART_LOOP_MS);
+  times.push(now);
+  recentDies.set(key, times);
+  if (times.length < RESTART_LOOP_COUNT) return false;
+  // Once per 10 minutes for the same container.
+  if (now - (loopReported.get(key) || 0) < 10 * 60 * 1000) return true;
+  loopReported.set(key, now);
+  const code = Number.isInteger(change.exitCode) ? ` (exit code ${change.exitCode})` : '';
+  addNotification({ project: change.project, text: `${who} keeps restarting${code}. Open the project and click "Why?" next to it.`, kind: 'error', source: 'docker' });
+  return true;
+}
+
 function notifyDockerEvent(change) {
   if (!change || !change.project) return;
   const action = change.action;
   const who = change.service || change.name || 'container';
+  if (action === 'unhealthy') {
+    addNotification({ project: change.project, text: `${who} is unhealthy: its health check fails. Click "Why?" next to it to see the check output.`, kind: 'warn', source: 'docker' });
+    return;
+  }
+  if (action === 'healthy') return;
+  // A restart loop gives one error instead of "exited" and "started" again and again.
+  if (action === 'die' && watchRestartLoop(change, who)) return;
+  if (action === 'start' && (recentDies.get(change.name || `${change.project}/${who}`) || []).filter((t) => Date.now() - t < RESTART_LOOP_MS).length >= RESTART_LOOP_COUNT) return;
   if (action === 'die') {
     const key = change.name || who;
     clearTimeout(pendingDies.get(key));
@@ -5525,8 +7151,7 @@ function containerTableRow(c) {
   const image = td('mono c-image link-ish');
   image.textContent = c.image;
   const status = td();
-  const word = up ? 'Running' : String(c.state || 'stopped').replace(/^./, (x) => x.toUpperCase());
-  status.appendChild(statusCell(up ? 'running' : 'stopped', word));
+  status.appendChild(containerStatusCell(c, c.project));
   const ports = td('c-ports');
   const own = containerPorts(c);
   if (own.length) for (const { project, port } of own) ports.appendChild(openPortLink(project, port));
@@ -5780,6 +7405,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   el.startCard = byId('start-card');
   el.logsCard = byId('logs-card');
   el.logViewCard = byId('logview-card');
+  el.mailViewCard = byId('mailview-card');
+  el.dataViewCard = byId('dataview-card');
+  el.reqViewCard = byId('reqview-card');
+  el.redisViewCard = byId('redisview-card');
   el.logsTitle = byId('logs-title');
   el.logsOutput = byId('logs-output');
   el.copyEnvDocker = byId('copy-env-docker');
@@ -5920,6 +7549,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   bindProjectsPage();
   bindContainersPage();
   bindNotifications();
+  bindDataTabs();
+  bindWhyModal();
+  bindCleanupPage();
+  bindRequestsView();
   // Every message bar closes with its x button.
   document.addEventListener('click', (event) => {
     const close = event.target.closest('.note-close');

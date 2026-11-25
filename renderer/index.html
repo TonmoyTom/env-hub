@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-src http://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ProjectDockHub</title>
@@ -74,6 +74,10 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"></path><path d="M3 8l9 5 9-5M12 13v8"></path></svg>
           <span class="nav-label">Containers</span>
           <span class="nav-count" id="nav-ccount">0</span>
+        </button>
+        <button type="button" class="nav-item" id="nav-cleanup" data-view="cleanup">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5.5" rx="8" ry="2.5"></ellipse><path d="M4 5.5v6c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5v-6"></path><path d="M4 11.5v6c0 1.4 3.6 2.5 8 2.5 1 0 2-.1 2.9-.2"></path><path d="M17 16l4 4M21 16l-4 4"></path></svg>
+          <span class="nav-label">Disk &amp; cleanup</span>
         </button>
         <button type="button" class="nav-item" id="nav-new" data-view="new">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
@@ -650,6 +654,7 @@
               >
                 Logs
               </button>
+              <button type="button" role="tab" class="tab" data-tab="data" aria-selected="false" hidden>Data</button>
               <button
                 type="button"
                 role="tab"
@@ -738,6 +743,7 @@
                 <button type="button" data-section="set-folder">Projects folder</button>
                 <button type="button" data-section="set-dockerfiles">Docker files</button>
                 <button type="button" data-section="set-docker">Docker engine</button>
+                <button type="button" data-section="set-catalog">Services catalog</button>
                 <button type="button" data-section="set-versions">Versions</button>
                 <button type="button" data-section="set-about">About</button>
               </nav>
@@ -798,6 +804,13 @@
                   </div>
                   <div><button type="button" class="btn-sm" id="settings-check-docker">Check Docker again</button></div>
                 </section>
+                <section class="set-section set-inline" id="set-catalog">
+                  <div>
+                    <h2 class="panel-title">Services catalog</h2>
+                    <p>What ProjectDockHub knows about each Docker image: its ports, user, password and .env lines. Add your own services here; the Credentials tab uses them.</p>
+                  </div>
+                  <button type="button" class="btn-sm" id="settings-catalog-btn">Open services catalog</button>
+                </section>
                 <section class="set-section set-inline" id="set-versions">
                   <div>
                     <h2 class="panel-title">Versions</h2>
@@ -841,6 +854,18 @@
               <fieldset id="edit-options" class="options tiles">
                 <legend class="sr-only">Services</legend>
               </fieldset>
+            </div>
+
+            <div id="edit-ports" class="form-section" hidden>
+              <div class="form-section-head">
+                <h3>Ports</h3>
+                <p class="muted small">
+                  The port on this computer where each service opens (localhost:PORT). Type another one to change it:
+                  it is checked first, and it can only be used when no other project, Docker container or program has it.
+                </p>
+              </div>
+              <div id="edit-ports-list" class="port-edit-list"></div>
+              <div id="edit-ports-note" class="note-line" role="status" aria-live="polite" hidden><span class="note-text"></span><button type="button" class="note-close" aria-label="Close message" title="Close">&times;</button></div>
             </div>
 
             <div id="edit-db" class="form-section" hidden>
@@ -1139,6 +1164,118 @@
             <div id="volumes-body" class="vol-body"></div>
           </section>
 
+          <section class="panel view-projects dataview" id="dataview-card" hidden>
+            <div class="data-layout">
+              <nav class="data-services" aria-label="Services with data">
+                <span class="data-services-title">Services</span>
+                <div id="dv-services"></div>
+              </nav>
+              <div class="data-body" id="dv-body"></div>
+            </div>
+          </section>
+
+          <section class="panel view-projects reqview" id="reqview-card" hidden>
+            <div class="panel-toolbar">
+              <label class="field-search">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+                <span class="sr-only">Search requests</span>
+                <input id="qv-search" type="search" placeholder="Search path, body" autocomplete="off" />
+              </label>
+              <span class="muted small" id="qv-count"></span>
+              <div class="push-right toolbar-actions">
+                <button type="button" class="btn-sm" id="qv-refresh">Refresh</button>
+                <button type="button" class="btn-sm" id="qv-ok" title="Loads a rule in Smocker: every request gets 200 OK, so the app sees success">Answer every request with 200</button>
+                <button type="button" class="btn-sm" id="qv-open">Open page</button>
+                <button type="button" class="btn-sm danger-outline" id="qv-clear">Clear</button>
+              </div>
+            </div>
+            <details class="mail-connect">
+              <summary>Connect your app to this API catcher <span class="muted small">(fax, SMS, payment ... nothing real is sent)</span></summary>
+              <div class="mail-connect-body">
+                <p class="muted small" id="qv-connect-note"></p>
+                <div class="env-block" id="qv-connect-env"></div>
+                <div class="row-actions"><button type="button" class="btn-sm" id="qv-connect-copy">Copy .env line</button></div>
+              </div>
+            </details>
+            <div id="qv-error" class="note-line" role="status" hidden><span class="note-text"></span><button type="button" class="note-close" aria-label="Close message" title="Close">&times;</button></div>
+            <div class="split-view">
+              <ul class="mail-list" id="qv-list" aria-label="Requests"></ul>
+              <div class="mail-detail" id="qv-detail"></div>
+            </div>
+          </section>
+
+          <section class="panel view-projects mailview" id="mailview-card" hidden>
+            <div class="panel-toolbar">
+              <label class="field-search">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+                <span class="sr-only">Search mails</span>
+                <input id="mv-search" type="search" placeholder="Search subject, from, to" autocomplete="off" />
+              </label>
+              <span class="muted small" id="mv-count"></span>
+              <div class="push-right toolbar-actions">
+                <button type="button" class="btn-sm" id="mv-refresh">Refresh</button>
+                <button type="button" class="btn-sm" id="mv-open">Open Mailpit</button>
+                <button type="button" class="btn-sm danger-outline" id="mv-clear">Delete all</button>
+              </div>
+            </div>
+            <details class="mail-connect" id="mv-connect">
+              <summary>Connect your app to this Mailpit <span class="muted small">(SMTP · no user, no password)</span></summary>
+              <div class="mail-connect-body">
+                <div class="seg" role="group" aria-label="Where your app runs">
+                  <button type="button" data-mail-target="docker" aria-pressed="true">Inside Docker (recommended)</button>
+                  <button type="button" data-mail-target="host" aria-pressed="false">On this computer</button>
+                </div>
+                <p class="muted small" id="mv-connect-note"></p>
+                <div class="env-block" id="mv-connect-env"></div>
+                <div class="row-actions"><button type="button" class="btn-sm" id="mv-connect-copy">Copy .env lines</button></div>
+              </div>
+            </details>
+            <div id="mv-error" class="note-line" role="alert" hidden><span class="note-text"></span><button type="button" class="note-close" aria-label="Close message" title="Close">&times;</button></div>
+            <div class="split-view">
+              <ul class="mail-list" id="mv-list" aria-label="Mails"></ul>
+              <div class="mail-detail" id="mv-detail"></div>
+            </div>
+          </section>
+
+          <section class="panel view-projects redisview" id="redisview-card" hidden>
+            <div class="panel-toolbar">
+              <label class="mini-field">Database
+                <select id="rv-db" aria-label="Redis database"></select>
+              </label>
+              <label class="field-search">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+                <span class="sr-only">Key pattern</span>
+                <input id="rv-pattern" type="search" placeholder="Keys, for example laravel_cache:*" autocomplete="off" />
+              </label>
+              <span class="muted small" id="rv-info"></span>
+              <div class="push-right toolbar-actions">
+                <button type="button" class="btn-sm" id="rv-refresh">Refresh</button>
+                <button type="button" class="btn-sm danger-outline" id="rv-flush">Flush DB</button>
+              </div>
+            </div>
+            <details class="mail-connect" id="rv-connect">
+              <summary>Connect your app to this Redis <span class="muted small" id="rv-connect-sub"></span></summary>
+              <div class="mail-connect-body">
+                <div class="seg" role="group" aria-label="Where your app runs">
+                  <button type="button" data-redis-target="docker" aria-pressed="true">Inside Docker (recommended)</button>
+                  <button type="button" data-redis-target="host" aria-pressed="false">On this computer</button>
+                </div>
+                <p class="muted small" id="rv-connect-note"></p>
+                <div class="env-block" id="rv-connect-env"></div>
+                <label class="check-sm"><input type="checkbox" id="rv-connect-laravel" checked /> Also use Redis for cache, sessions and queues (Laravel)</label>
+                <div class="row-actions">
+                  <button type="button" class="btn-sm" id="rv-connect-show">Show password</button>
+                  <button type="button" class="btn-sm" id="rv-connect-copy">Copy .env lines</button>
+                </div>
+              </div>
+            </details>
+            <div id="rv-error" class="note-line" role="alert" hidden><span class="note-text"></span><button type="button" class="note-close" aria-label="Close message" title="Close">&times;</button></div>
+            <div class="split-view">
+              <div class="redis-keys" id="rv-keys"></div>
+              <div class="redis-value" id="rv-value"></div>
+            </div>
+          </section>
+
           <section class="panel view-projects logview" id="logview-card" hidden>
             <div class="panel-toolbar">
               <div class="chip-row" id="lv-chips" role="group" aria-label="Service"></div>
@@ -1194,6 +1331,53 @@
               <button id="cred-close" type="button">Close</button>
             </div>
             <div id="cred-body" class="cred-body"></div>
+          </section>
+
+          <section class="card bare view-cleanup" id="cleanup-card">
+            <div class="page-head">
+              <div>
+                <span class="eyebrow">local / disk</span>
+                <h1>Disk &amp; cleanup</h1>
+                <p>What Docker keeps on this computer: images, containers, volumes and build cache, for every app, not only ProjectDockHub. Free space here.</p>
+              </div>
+              <div class="row-actions">
+                <button id="cleanup-refresh" type="button">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg>
+                  Refresh
+                </button>
+              </div>
+            </div>
+            <div class="summary-strip">
+              <div><span class="ss-label">Docker uses</span><span class="ss-value" id="du-total">–</span></div>
+              <div><span class="ss-label"><span class="dot ok"></span>Can be freed</span><span class="ss-value" id="du-free">–</span></div>
+              <div><span class="ss-label">Unused volumes</span><span class="ss-value" id="du-vols">–</span></div>
+            </div>
+            <div id="cleanup-note" class="note-line" role="status" hidden><span class="note-text"></span><button type="button" class="note-close" aria-label="Close message" title="Close">&times;</button></div>
+            <div class="du-grid" id="du-grid"></div>
+            <div class="panel">
+              <div class="panel-toolbar">
+                <div>
+                  <h3 class="panel-title">Unused volumes</h3>
+                  <p class="muted small du-sub">Volumes no container uses, not even a stopped one. They often hold old database data: remove only what you no longer need. Removed data cannot come back.</p>
+                </div>
+                <div class="push-right toolbar-actions">
+                  <button type="button" class="btn-sm danger-outline" id="vol-remove" disabled>Remove selected</button>
+                </div>
+              </div>
+              <div class="table-scroll">
+                <table class="dtable vtable">
+                  <thead>
+                    <tr>
+                      <th class="col-check"><input type="checkbox" id="vol-all" aria-label="Select all unused volumes" /></th>
+                      <th>Volume</th>
+                      <th>Made by</th>
+                      <th class="num">Size</th>
+                    </tr>
+                  </thead>
+                  <tbody id="vol-list"></tbody>
+                </table>
+              </div>
+            </div>
           </section>
 
           <section class="card bare view-system" id="containers-card">
@@ -1259,6 +1443,18 @@
       <span class="sb-item" id="sb-stop-exit"></span>
       <span class="sb-item" id="sb-app"></span>
     </footer>
+    <div class="modal-backdrop" id="why-modal" hidden>
+      <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="why-title">
+        <span class="eyebrow">container / why</span>
+        <h2 id="why-title">Why?</h2>
+        <div id="why-body" class="modal-body"></div>
+        <div class="modal-actions">
+          <div class="row-actions" id="why-actions-extra"></div>
+          <button type="button" id="why-close" class="primary">Close</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-backdrop" id="confirm-modal" hidden>
       <div
         class="modal"

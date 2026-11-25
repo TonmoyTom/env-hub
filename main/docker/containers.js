@@ -2,6 +2,7 @@
 
 const { LABELS, MANAGED_FILTER, projectFilter, serviceFilter, composeProject, phpImage, networkName } = require('../naming');
 const { runDocker, firstLine } = require('./exec');
+const { healthOf } = require('./health');
 const { NAME_RE } = require('../compose/generate');
 
 const ID_RE = /^[a-f0-9]{12,64}$/;
@@ -49,6 +50,8 @@ async function listContainers(projectName) {
         image: c.Image,
         state: c.State,
         status: c.Status,
+        // 'healthy', 'unhealthy', 'starting', or null when the image has no health check.
+        health: healthOf(c.Status),
         project: labels[LABELS.project] || null,
         service: labels[LABELS.service] || null,
       };

@@ -209,7 +209,8 @@ function connectionText({ config, ports, password, rootPassword, dbName = DB_NAM
 
 // The same facts as connectionText, as data, so the window can show cards with copy buttons.
 // { env: { docker, host }, databases: [...], pages: [...], extras: [...] }
-function connectionData({ config, ports, password, rootPassword, dbName = DB_NAME, dbUser = DB_USER, redisPassword = '', mail }) {
+// `describe(service)` (optional) turns an extra service into a credentials card (the service catalog).
+function connectionData({ config, ports, password, rootPassword, dbName = DB_NAME, dbUser = DB_USER, redisPassword = '', mail, describe = null }) {
   const root = rootPassword || password;
   const user = dbUser || DB_USER;
   const creds = { password, dbName, user, redisPassword, mail };
@@ -252,12 +253,15 @@ function connectionData({ config, ports, password, rootPassword, dbName = DB_NAM
   const known = new Set(['nginx', 'php', 'node', 'app', 'mysql', 'postgres', 'mongodb', 'redis', 'phpmyadmin', 'adminer', 'mailpit']);
   const extras = config.services
     .filter((service) => !known.has(service.name))
-    .map((service) => ({
-      name: service.name,
-      image: service.image,
-      ports: ports.filter((p) => p.service === service.name).map((p) => ({ host: p.host, container: p.container })),
-      env: { ...(service.env || {}) },
-    }));
+    .map((service) => {
+      const facts = {
+        name: service.name,
+        image: service.image,
+        ports: ports.filter((p) => p.service === service.name).map((p) => ({ host: p.host, container: p.container })),
+        env: { ...(service.env || {}) },
+      };
+      return describe ? { ...facts, card: describe(facts) } : facts;
+    });
 
   return {
     env: {

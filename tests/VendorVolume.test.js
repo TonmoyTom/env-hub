@@ -10,7 +10,30 @@ const { laravelProject } = require('../main/stacks/laravel');
 const { generateCompose } = require('../main/compose/generate');
 const { applyServiceEdit, describeForEdit } = require('../main/stacks/edit');
 const { describeVolumes } = require('../main/stacks/volumes');
-const { vendorPlan, lockHash, syncVendorVolume } = require('../main/project/vendor-volume');
+const { vendorPlan, lockHash, syncVendorVolume, copyVendorWithTar, folderSize } = require('../main/project/vendor-volume');
+const { EventEmitter } = require('events');
+const { PassThrough } = require('stream');
+
+// A stand-in for a spawned program: `output` comes out of stdout, then it closes with `code`.
+// With `error`, it fails to start (like a missing tar).
+function fakeChild({ output = '', code = 0, error = null } = {}) {
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.stdin = new PassThrough();
+  child.kill = () => {};
+  setImmediate(() => {
+    if (error) {
+      child.emit('error', error);
+      return;
+    }
+    child.stdout.end(output);
+    child.stderr.end();
+    child.stdout.on('end', () => setImmediate(() => child.emit('close', code)));
+    child.stdout.resume();
+  });
+  return child;
+}
 
 const FOLDER = path.resolve('/projects/shop');
 const base = { name: 'shop', stack: 'laravel', phpVersion: '8.3', folder: FOLDER, options: { mysql: true } };
@@ -83,7 +106,9 @@ test('vendor volume: the first start copies vendor once, the next start does not
     };
     const stream = async (args) => { streamed.push(args); filled = true; return { ok: true, tail: [] }; };
 
-    const first = await syncVendorVolume({ projectName: 'shop', folder, run, stream });
+    // No tar here: the fast copy fails at once, and the copy through the shared folder is used.
+    const noTar = () => fakeChild({ error: Object.assign(new Error('spawn tar ENOENT'), { code: 'ENOENT' }) });
+    const first = await syncVendorVolume({ projectName: 'shop', folder, run, stream, spawnFn: noTar });
     assert.deepStrictEqual(first, { ok: true, action: 'copy' });
     assert.strictEqual(streamed.length, 1);
     assert.ok(streamed[0].includes(`type=bind,source=${path.join(folder, 'vendor')},target=/src,readonly`));
@@ -100,6 +125,38 @@ test('vendor volume: the first start copies vendor once, the next start does not
     const third = await syncVendorVolume({ projectName: 'shop', folder, run, stream });
     assert.strictEqual(third.action, 'install');
     assert.deepStrictEqual(streamed[1].slice(-4), ['composer', 'install', '--no-interaction', '--prefer-dist']);
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test('vendor volume: the fast copy streams vendor with tar into the volume and reports progress', async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'envhub-vendor-'));
+  try {
+    fs.mkdirSync(path.join(folder, 'vendor', 'laravel'), { recursive: true });
+    fs.writeFileSync(path.join(folder, 'vendor', 'autoload.php'), '<?php');
+    fs.writeFileSync(path.join(folder, 'vendor', 'laravel', 'big.php'), 'x'.repeat(5000));
+    const spawned = [];
+    const spawnFn = (command, args) => {
+      spawned.push([command, ...args]);
+      return fakeChild({ output: command === 'tar' ? 'y'.repeat(6000) : '', code: 0 });
+    };
+    const res = await copyVendorWithTar({
+      hostVendor: path.join(folder, 'vendor'),
+      volume: 'envhub-shop-php-vendor',
+      image: 'envhub-shop-php',
+      log: () => {},
+      progress: (fraction, text) => { spawned.lastProgress = [fraction, text]; },
+      total: await folderSize(path.join(folder, 'vendor')),
+      spawnFn,
+    });
+    assert.deepStrictEqual(res, { ok: true });
+    assert.deepStrictEqual(spawned[0], ['tar', '-cf', '-', '-C', path.join(folder, 'vendor'), '.']);
+    assert.ok(spawned[1].includes('type=volume,source=envhub-shop-php-vendor,target=/dst'));
+    assert.strictEqual(spawned[1][spawned[1].length - 1], 'tar -xf - -C /dst');
+    assert.strictEqual(spawned.lastProgress[0], 1);
+    const size = await folderSize(path.join(folder, 'vendor'));
+    assert.deepStrictEqual(size, { bytes: 5005, files: 2 });
   } finally {
     fs.rmSync(folder, { recursive: true, force: true });
   }

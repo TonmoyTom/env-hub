@@ -61,11 +61,37 @@ function parseEnv(value) {
 }
 
 // Split on spaces and passed as is, with no shell, so it is added to the image's own entry point.
+// Text in "double" or 'single' quotes stays one argument, so sh -c "a; b" works. Inside double
+// quotes \" and \\ are a quote and a backslash (the way the Links panel writes them).
 function parseCommand(value) {
   if (value === undefined || value === null || value === '') return [];
   if (Array.isArray(value)) return value.map(String);
   if (typeof value !== 'string') throw new Error('Invalid command');
-  return value.split(/\s+/).filter(Boolean);
+  const args = [];
+  let current = '';
+  let started = false;
+  let quote = '';
+  for (let i = 0; i < value.length; i += 1) {
+    const ch = value[i];
+    if (quote) {
+      if (ch === quote) quote = '';
+      else if (quote === '"' && ch === '\\' && (value[i + 1] === '"' || value[i + 1] === '\\')) current += value[(i += 1)];
+      else current += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      started = true;
+    } else if (/\s/.test(ch)) {
+      if (started) args.push(current);
+      current = '';
+      started = false;
+    } else {
+      current += ch;
+      started = true;
+    }
+  }
+  if (quote) throw new Error('Invalid command: a quote is not closed');
+  if (started) args.push(current);
+  return args;
 }
 
 // Where known databases and stores keep their data inside the container, by image name.

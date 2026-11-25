@@ -251,6 +251,7 @@ body[data-view="new"] .content > section:not(.view-new),
 body[data-view="system"] .content > section:not(.view-system),
 body[data-view="settings"] .content > section:not(.view-settings),
 body[data-view="notifications"] .content > section:not(.view-notifications),
+body[data-view="cleanup"] .content > section:not(.view-cleanup),
 body[data-view="detail"] .content > section:not(.view-detail) {
   display: none !important;
 }

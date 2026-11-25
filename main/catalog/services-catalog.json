@@ -1,0 +1,272 @@
+{
+  "_help": "Built-in service catalog. Add or change entries in services-catalog.json in the app data folder (Settings > Services catalog). An entry is matched by the image name without tag. Placeholders: {service} {host} {port:NAME} {user} {password} {database} {auth} and {env:NAME1,NAME2|default}.",
+  "services": [
+    {
+      "id": "mailpit",
+      "label": "Mailpit",
+      "kind": "mail",
+      "match": ["axllent/mailpit"],
+      "ports": { "smtp": 1025, "web": 8025 },
+      "web": "web",
+      "note": "Catches every mail the app sends. No user and no password.",
+      "fields": [
+        { "label": "SMTP host", "value": "{host}" },
+        { "label": "SMTP port", "value": "{port:smtp}" },
+        { "label": "User / password", "value": "none" }
+      ],
+      "env": ["MAIL_MAILER=smtp", "MAIL_HOST={host}", "MAIL_PORT={port:smtp}", "MAIL_USERNAME=null", "MAIL_PASSWORD=null", "MAIL_ENCRYPTION=null"],
+      "viewer": "mail"
+    },
+    {
+      "id": "mailhog",
+      "label": "MailHog",
+      "kind": "mail",
+      "match": ["mailhog/mailhog"],
+      "ports": { "smtp": 1025, "web": 8025 },
+      "web": "web",
+      "note": "Catches every mail the app sends. No user and no password.",
+      "fields": [
+        { "label": "SMTP host", "value": "{host}" },
+        { "label": "SMTP port", "value": "{port:smtp}" }
+      ],
+      "env": ["MAIL_MAILER=smtp", "MAIL_HOST={host}", "MAIL_PORT={port:smtp}", "MAIL_USERNAME=null", "MAIL_PASSWORD=null", "MAIL_ENCRYPTION=null"]
+    },
+    {
+      "id": "redis",
+      "label": "Redis",
+      "kind": "keyvalue",
+      "match": ["redis", "bitnami/redis", "redis/redis-stack-server", "valkey/valkey", "bitnami/valkey", "eqalpha/keydb"],
+      "ports": { "redis": 6379 },
+      "user": "",
+      "password": "{env:REDIS_PASSWORD,VALKEY_PASSWORD|}",
+      "fields": [
+        { "label": "Host", "value": "{host}" },
+        { "label": "Port", "value": "{port:redis}" },
+        { "label": "Password", "value": "{password}", "secret": true }
+      ],
+      "env": ["REDIS_CLIENT=phpredis", "REDIS_HOST={host}", "REDIS_PASSWORD={password|null}", "REDIS_PORT={port:redis}"],
+      "viewer": "keyvalue"
+    },
+    {
+      "id": "mysql",
+      "label": "MySQL / MariaDB",
+      "kind": "sql",
+      "match": ["mysql", "mariadb", "bitnami/mysql", "bitnami/mariadb", "percona", "percona/percona-server"],
+      "ports": { "db": 3306 },
+      "user": "{env:MYSQL_USER,MARIADB_USER|root}",
+      "password": "{env:MYSQL_PASSWORD,MARIADB_PASSWORD,MYSQL_ROOT_PASSWORD,MARIADB_ROOT_PASSWORD|}",
+      "database": "{env:MYSQL_DATABASE,MARIADB_DATABASE|}",
+      "fields": [
+        { "label": "Host", "value": "{host}" },
+        { "label": "Port", "value": "{port:db}" },
+        { "label": "Database", "value": "{database}" },
+        { "label": "User", "value": "{user}" },
+        { "label": "Password", "value": "{password}", "secret": true },
+        { "label": "Root password", "value": "{env:MYSQL_ROOT_PASSWORD,MARIADB_ROOT_PASSWORD|}", "secret": true }
+      ],
+      "env": ["DB_CONNECTION=mysql", "DB_HOST={host}", "DB_PORT={port:db}", "DB_DATABASE={database}", "DB_USERNAME={user}", "DB_PASSWORD={password}"],
+      "viewer": "sql"
+    },
+    {
+      "id": "postgres",
+      "label": "PostgreSQL",
+      "kind": "sql",
+      "match": ["postgres", "postgis/postgis", "bitnami/postgresql", "timescale/timescaledb", "pgvector/pgvector"],
+      "ports": { "db": 5432 },
+      "user": "{env:POSTGRES_USER|postgres}",
+      "password": "{env:POSTGRES_PASSWORD|}",
+      "database": "{env:POSTGRES_DB,POSTGRES_USER|postgres}",
+      "fields": [
+        { "label": "Host", "value": "{host}" },
+        { "label": "Port", "value": "{port:db}" },
+        { "label": "Database", "value": "{database}" },
+        { "label": "User", "value": "{user}" },
+        { "label": "Password", "value": "{password}", "secret": true }
+      ],
+      "env": ["DB_CONNECTION=pgsql", "DB_HOST={host}", "DB_PORT={port:db}", "DB_DATABASE={database}", "DB_USERNAME={user}", "DB_PASSWORD={password}"],
+      "viewer": "sql"
+    },
+    {
+      "id": "mongodb",
+      "label": "MongoDB",
+      "kind": "document",
+      "match": ["mongo", "bitnami/mongodb", "mongodb/mongodb-community-server"],
+      "ports": { "db": 27017 },
+      "user": "{env:MONGO_INITDB_ROOT_USERNAME,MONGODB_ROOT_USER|}",
+      "password": "{env:MONGO_INITDB_ROOT_PASSWORD,MONGODB_ROOT_PASSWORD|}",
+      "database": "{env:MONGO_INITDB_DATABASE|}",
+      "note": "Use MongoDB Compass with the connection URL.",
+      "fields": [
+        { "label": "Host", "value": "{host}" },
+        { "label": "Port", "value": "{port:db}" },
+        { "label": "User", "value": "{user}" },
+        { "label": "Password", "value": "{password}", "secret": true },
+        { "label": "Connection URL", "value": "mongodb://{auth}{host}:{port:db}/?authSource=admin", "secret": true }
+      ],
+      "env": ["MONGODB_URI=mongodb://{auth}{host}:{port:db}/?authSource=admin"]
+    },
+    {
+      "id": "rabbitmq",
+      "label": "RabbitMQ",
+      "kind": "queue",
+      "match": ["rabbitmq", "bitnami/rabbitmq"],
+      "ports": { "amqp": 5672, "web": 15672 },
+      "web": "web",
+      "user": "{env:RABBITMQ_DEFAULT_USER,RABBITMQ_USERNAME|guest}",
+      "password": "{env:RABBITMQ_DEFAULT_PASS,RABBITMQ_PASSWORD|guest}",
+      "note": "The web page needs an image with -management in its tag.",
+      "fields": [
+        { "label": "Host", "value": "{host}" },
+        { "label": "AMQP port", "value": "{port:amqp}" },
+        { "label": "User", "value": "{user}" },
+        { "label": "Password", "value": "{password}", "secret": true }
+      ],
+      "env": ["QUEUE_CONNECTION=rabbitmq", "RABBITMQ_HOST={host}", "RABBITMQ_PORT={port:amqp}", "RABBITMQ_USER={user}", "RABBITMQ_PASSWORD={password}", "RABBITMQ_VHOST=/"]
+    },
+    {
+      "id": "memcached",
+      "label": "Memcached",
+      "kind": "cache",
+      "match": ["memcached", "bitnami/memcached"],
+      "ports": { "cache": 11211 },
+      "fields": [
+        { "label": "Host", "value": "{host}" },
+        { "label": "Port", "value": "{port:cache}" }
+      ],
+      "env": ["CACHE_STORE=memcached", "MEMCACHED_HOST={host}", "MEMCACHED_PORT={port:cache}"]
+    },
+    {
+      "id": "elasticsearch",
+      "label": "Elasticsearch",
+      "kind": "search",
+      "match": ["elasticsearch", "elasticsearch/elasticsearch", "docker.elastic.co/elasticsearch/elasticsearch", "bitnami/elasticsearch", "opensearchproject/opensearch"],
+      "ports": { "http": 9200 },
+      "web": "http",
+      "user": "{env:ELASTIC_USERNAME|elastic}",
+      "password": "{env:ELASTIC_PASSWORD,OPENSEARCH_INITIAL_ADMIN_PASSWORD|}",
+      "fields": [
+        { "label": "URL", "value": "http://{host}:{port:http}" },
+        { "label": "User", "value": "{user}" },
+        { "label": "Password", "value": "{password}", "secret": true }
+      ],
+      "env": ["ELASTICSEARCH_HOST=http://{host}:{port:http}", "ELASTICSEARCH_USERNAME={user}", "ELASTICSEARCH_PASSWORD={password}"]
+    },
+    {
+      "id": "meilisearch",
+      "label": "Meilisearch",
+      "kind": "search",
+      "match": ["getmeili/meilisearch"],
+      "ports": { "http": 7700 },
+      "web": "http",
+      "password": "{env:MEILI_MASTER_KEY|}",
+      "fields": [
+        { "label": "URL", "value": "http://{host}:{port:http}" },
+        { "label": "Master key", "value": "{password}", "secret": true }
+      ],
+      "env": ["SCOUT_DRIVER=meilisearch", "MEILISEARCH_HOST=http://{host}:{port:http}", "MEILISEARCH_KEY={password}"]
+    },
+    {
+      "id": "typesense",
+      "label": "Typesense",
+      "kind": "search",
+      "match": ["typesense/typesense"],
+      "ports": { "http": 8108 },
+      "password": "{env:TYPESENSE_API_KEY|}",
+      "fields": [
+        { "label": "Host", "value": "{host}" },
+        { "label": "Port", "value": "{port:http}" },
+        { "label": "API key", "value": "{password}", "secret": true }
+      ],
+      "env": ["SCOUT_DRIVER=typesense", "TYPESENSE_HOST={host}", "TYPESENSE_PORT={port:http}", "TYPESENSE_PROTOCOL=http", "TYPESENSE_API_KEY={password}"]
+    },
+    {
+      "id": "minio",
+      "label": "MinIO (S3)",
+      "kind": "storage",
+      "match": ["minio/minio", "bitnami/minio", "quay.io/minio/minio"],
+      "ports": { "api": 9000, "web": 9001 },
+      "web": "web",
+      "user": "{env:MINIO_ROOT_USER,MINIO_ACCESS_KEY|minioadmin}",
+      "password": "{env:MINIO_ROOT_PASSWORD,MINIO_SECRET_KEY|minioadmin}",
+      "note": "The web console needs --console-address :9001 in the command.",
+      "fields": [
+        { "label": "Endpoint", "value": "http://{host}:{port:api}" },
+        { "label": "Access key", "value": "{user}" },
+        { "label": "Secret key", "value": "{password}", "secret": true }
+      ],
+      "env": ["FILESYSTEM_DISK=s3", "AWS_ACCESS_KEY_ID={user}", "AWS_SECRET_ACCESS_KEY={password}", "AWS_DEFAULT_REGION=us-east-1", "AWS_BUCKET=local", "AWS_ENDPOINT=http://{host}:{port:api}", "AWS_USE_PATH_STYLE_ENDPOINT=true"]
+    },
+    {
+      "id": "smocker",
+      "label": "Smocker (API catcher)",
+      "kind": "api",
+      "match": ["thiht/smocker", "ghcr.io/smocker-dev/smocker"],
+      "ports": { "api": 8080, "admin": 8081 },
+      "web": "admin",
+      "note": "Point a provider's API URL (fax, SMS, payment) at it. Nothing real is sent; every request shows in the Data tab. Use \"Answer every request with 200\" there so the app sees success.",
+      "fields": [
+        { "label": "API URL (for the app)", "value": "http://{host}:{port:api}" },
+        { "label": "Admin port", "value": "{port:admin}" }
+      ],
+      "env": ["FAX_API_URL=http://{host}:{port:api}"],
+      "viewer": "requests"
+    },
+    {
+      "id": "hylafax",
+      "label": "HylaFAX (fax server)",
+      "kind": "api",
+      "match": ["neoseason/hylafax", "hylafax"],
+      "ports": { "client": 4559 },
+      "note": "A real HylaFAX server, but Docker has no fax modem: jobs are queued and never dialled. The image only starts a shell, so it needs this start command: sh -c \"grep -q '^\\.\\*' /var/spool/hylafax/etc/hosts.hfaxd || echo '.*:21::' >> /var/spool/hylafax/etc/hosts.hfaxd; faxq; exec hfaxd -d -i 4559\". For testing what the app sends, Smocker is simpler.",
+      "fields": [
+        { "label": "Host (for the app)", "value": "{service}" },
+        { "label": "Client port", "value": "4559" },
+        { "label": "User", "value": "any name, no password" }
+      ],
+      "env": ["HYLAFAX_HOST={service}", "HYLAFAX_PORT=4559"]
+    },
+    {
+      "id": "adminer",
+      "label": "Adminer",
+      "kind": "web",
+      "match": ["adminer"],
+      "ports": { "web": 8080 },
+      "web": "web",
+      "note": "Database admin page. Use the database service name as the server.",
+      "fields": [{ "label": "Page", "value": "http://{host}:{port:web}" }]
+    },
+    {
+      "id": "phpmyadmin",
+      "label": "phpMyAdmin",
+      "kind": "web",
+      "match": ["phpmyadmin", "phpmyadmin/phpmyadmin"],
+      "ports": { "web": 80 },
+      "web": "web",
+      "fields": [{ "label": "Page", "value": "http://{host}:{port:web}" }]
+    },
+    {
+      "id": "mongo-express",
+      "label": "Mongo Express",
+      "kind": "web",
+      "match": ["mongo-express"],
+      "ports": { "web": 8081 },
+      "web": "web",
+      "user": "{env:ME_CONFIG_BASICAUTH_USERNAME|admin}",
+      "password": "{env:ME_CONFIG_BASICAUTH_PASSWORD|pass}",
+      "fields": [
+        { "label": "Page", "value": "http://{host}:{port:web}" },
+        { "label": "User", "value": "{user}" },
+        { "label": "Password", "value": "{password}", "secret": true }
+      ]
+    },
+    {
+      "id": "redis-commander",
+      "label": "Redis Commander",
+      "kind": "web",
+      "match": ["rediscommander/redis-commander"],
+      "ports": { "web": 8081 },
+      "web": "web",
+      "fields": [{ "label": "Page", "value": "http://{host}:{port:web}" }]
+    }
+  ]
+}

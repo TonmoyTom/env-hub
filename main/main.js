@@ -12,6 +12,9 @@ const fs = require('fs');
 const path = require('path');
 const naming = require('./naming');
 const { checkDocker } = require('./docker/check');
+const { checkHostPort } = require('./network/port-choice');
+const serviceData = require('./docker/service-data');
+const catalog = require('./catalog/catalog');
 const { startDockerDesktop, downloadUrl } = require('./docker/launch');
 const { shutDownDocker } = require('./docker/desktop');
 const { syncVendorVolume } = require('./project/vendor-volume');
@@ -32,13 +35,16 @@ const { describeVolumes } = require('./stacks/volumes');
 const { startEvents } = require('./docker/events');
 const { dockerHostPorts } = require('./docker/ports');
 const { setupProject, stepsFor, waitForApp } = require('./docker/pipeline');
+const { diagnoseContainer } = require('./docker/health');
+const cleanup = require('./docker/cleanup');
+const userCompose = require('./compose/user-compose');
 const { generateCompose, writeComposeFile, validateProject, NAME_RE } = require('./compose/generate');
-const { resolveHostPorts, portsOf, applySavedPorts, toSavedPorts } = require('./network/ports');
+const { resolveHostPorts, portsOf, applySavedPorts, toSavedPorts, isPortFree } = require('./network/ports');
 const { buildProject, stackLabel, mainWebService, mainWebPort, CREATABLE_STACKS } = require('./stacks');
 const registry = require('./registry/versions');
 const { normalizeOptions } = require('./stacks/laravel');
 const { normalizeNodeOptions, NODE_STACKS } = require('./stacks/node');
-const { streamDocker } = require('./docker/exec');
+const { streamDocker, runDocker } = require('./docker/exec');
 const { projectStats, projectDisk, openShell } = require('./docker/stats');
 const { searchImages, listTags, imageExists, fetchVersionLists } = require('./docker/hub');
 const { normalizeExtraServices } = require('./stacks/extras');
@@ -108,6 +114,10 @@ if (app.getPath('userData') === path.join(app.getPath('appData'), app.getName())
 
 function dataDir() {
   return app.getPath('userData');
+}
+
+function catalogFile() {
+  return path.join(dataDir(), 'services-catalog.json');
 }
 
 // New projects live outside Documents, which is often synced by OneDrive.
@@ -213,6 +223,8 @@ function serviceNamesOf(spec) {
 function knownPorts(spec) {
   const assigned = projects.getAssignments(spec.name);
   if (assigned) return assigned;
+  // A compose project's ports are the ones in the user's file, never saved ones.
+  if (spec.stack === 'compose') return portsOf(configForPorts(spec));
   return portsOf(applySavedPorts(configForPorts(spec), spec.hostPorts));
 }
 
@@ -224,9 +236,43 @@ function ownedHostPorts(spec) {
   return new Set(hosts.filter((host) => Number.isInteger(host)));
 }
 
+// The service that runs Mailpit / Redis: the built-in one, or an extra service with that image.
+function mailServiceOf(config) {
+  const svc = config.services.find((s) => s.name === 'mailpit') || config.services.find((s) => /(^|\/)mailpit(:|@|$)/i.test(s.image || ''));
+  return svc ? svc.name : null;
+}
+
+function redisServiceOf(config) {
+  const svc = config.services.find((s) => s.name === 'redis') || config.services.find((s) => /(^|\/)redis(:|@|$)/i.test(s.image || ''));
+  return svc ? svc.name : null;
+}
+
+// Viewers the Data tab can show now. More kinds (sql, document) come later; the catalog already names them.
+const SUPPORTED_VIEWERS = new Set(['mail', 'keyvalue', 'requests']);
+
+// The services of a project that have a viewer in the Data tab: [{ service, viewer, label, image }].
+function viewerServices(spec) {
+  const entries = catalog.loadCatalog(catalogFile()).entries;
+  const out = [];
+  for (const svc of configForPorts(spec).services) {
+    const entry = catalog.findEntry(entries, svc.image || '');
+    let viewer = entry && entry.viewer ? entry.viewer : '';
+    // The built-in services by name, in case an image is not in the catalog.
+    if (!viewer && svc.name === 'mailpit') viewer = 'mail';
+    if (!viewer && svc.name === 'redis') viewer = 'keyvalue';
+    if (SUPPORTED_VIEWERS.has(viewer)) out.push({ service: svc.name, viewer, label: entry ? entry.label : svc.name, image: svc.image || '' });
+  }
+  return out;
+}
+
 function summarizeProject(spec) {
   const config = configForPorts(spec);
   return {
+    // For the Data tab: which services have a viewer.
+    viewers: viewerServices(spec),
+    // For the Mail and Redis tabs.
+    mailService: mailServiceOf(config),
+    redisService: redisServiceOf(config),
     name: spec.name,
     stack: spec.stack || 'custom',
     label: stackLabel(spec),
@@ -273,6 +319,79 @@ function logSender(name) {
   };
   send.flush = flush;
   return send;
+}
+
+// Starts a project that runs the user's own compose file ("compose" stack). The file is read again every time,
+// so changes to it are picked up. Its ports are the user's: they are never moved. A port that is busy is
+// reported before anything starts, with the place to change it.
+async function startComposeProject(spec, options) {
+  const rebuild = Boolean(options) && options.rebuild === true;
+  const apply = rebuild || (Boolean(options) && options.apply === true);
+  const read = await userCompose.readComposeConfig(spec);
+  projects.updateSpec(spec.name, { services: read.services, webService: read.webService, webPort: read.webPort });
+  const config = { name: spec.name, services: read.services };
+  const ports = portsOf(config);
+
+  if (!apply && (await isProjectFullyRunning(spec.name, read.services.map((svc) => svc.name)))) {
+    return { ok: true, alreadyRunning: true, changed: [], ports };
+  }
+
+  const steps = [
+    { id: 'ports', label: 'Checking ports' },
+    { id: 'files', label: `Reading ${spec.composeFile}` },
+    { id: 'pull', label: 'Downloading images' },
+  ];
+  if (read.services.some((svc) => svc.build)) steps.push({ id: 'build', label: 'Building images' });
+  steps.push({ id: 'up', label: 'Starting containers' });
+  const report = progressReporter(spec.name, steps);
+  const log = logSender(spec.name);
+  for (const warning of read.warnings) log(warning);
+
+  report('ports', null, `Checking the ports in ${spec.composeFile}`);
+  const dockerPorts = await dockerHostPorts(spec.name);
+  const others = projects.hostPortsUsedByOthers(spec.name);
+  // While this project runs, its own ports are held by its own containers: they are not busy for it.
+  const ownRunning = await isProjectRunning(spec.name);
+  const busy = [];
+  for (const p of ports) {
+    const owner = dockerPorts.get(p.host);
+    if (owner && owner.running) busy.push(`${p.host} (${p.service}) is used by the container ${owner.name}${owner.project ? ` of ${owner.project}` : ''}`);
+    else if (others.has(p.host)) busy.push(`${p.host} (${p.service}) is used by another ProjectDockHub project`);
+    else if (!ownRunning && !(await isPortFree(p.host))) busy.push(`${p.host} (${p.service}) is used by another program on this computer`);
+  }
+  if (busy.length > 0) {
+    log.flush();
+    return {
+      ok: false,
+      stdout: '',
+      stderr: `Port ${busy.join('; port ')}. Change the port in ${spec.composeFile} (the number before the colon), or stop what uses it.`,
+      changed: [],
+      ports,
+    };
+  }
+
+  report('files', null, 'Writing the label file');
+  log(`$ docker compose -f ${spec.composeFile} -f override.json -p ${spec.name} up -d`);
+  const override = userCompose.writeOverride(dataDir(), spec.name, read.services);
+  startingPorts.set(spec.name, new Set(ports.map((p) => p.host)));
+  try {
+    const res = await setupProject({
+      composeArgs: userCompose.composeArgsFor(spec, override),
+      projectName: spec.name,
+      config,
+      report,
+      log,
+      rebuild,
+    });
+    log.flush();
+    if (res.ok) {
+      projects.setAssignments(spec.name, ports);
+      projects.setHostPorts(spec.name, toSavedPorts(ports));
+    }
+    return { ...res, changed: [], ports };
+  } finally {
+    startingPorts.delete(spec.name);
+  }
 }
 
 // The folder of an existing project: an absolute path to a folder that exists, not ProjectDockHub's own data.
@@ -449,6 +568,16 @@ function registerIpcHandlers() {
     const error = await shell.openPath(dir);
     return { ok: !error, error };
   });
+  // The user's own service catalog (<app data>/services-catalog.json), created with an example the first time.
+  handle('catalog:openFile', async () => {
+    const file = catalogFile();
+    if (!fs.existsSync(file)) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, `${JSON.stringify(catalog.USER_FILE_EXAMPLE, null, 2)}\n`);
+    }
+    const error = await shell.openPath(file);
+    return { ok: !error, error, file };
+  });
   handle('settings:resetProjectsDir', () => {
     settings.resetProjectsDir();
     return projectsSettings();
@@ -474,7 +603,8 @@ function registerIpcHandlers() {
   // Checks the folder and guesses stack and version. Writes nothing.
   handle('project:detect', (folder) => {
     const dir = checkExistingFolder(folder);
-    return { folder: dir, ...detectProject(dir) };
+    // A docker-compose.yml in the folder can be run as it is (the "compose" stack).
+    return { folder: dir, ...detectProject(dir), composeFile: userCompose.findComposeFile(dir) };
   });
 
   // Adds the folder as a project. The folder is only read: ProjectDockHub writes no file into it,
@@ -484,13 +614,22 @@ function registerIpcHandlers() {
     if (typeof name !== 'string' || !NAME_RE.test(name)) {
       throw new Error('Invalid project name: use lowercase letters, numbers and dashes, starting with a letter');
     }
-    if (!['laravel', 'docker', ...NODE_STACKS].includes(stack)) {
+    if (!['laravel', 'docker', 'compose', ...NODE_STACKS].includes(stack)) {
       throw new Error('Unsupported stack');
     }
     if (projects.getSpec(name)) {
       throw new Error('A project with this name already exists');
     }
     const folder = checkExistingFolder(input.folder);
+    if (stack === 'compose') {
+      // The user's own compose file, run as it is. Docker Compose reads it now, so a broken file is reported here.
+      const composeFile = userCompose.assertComposeFileName(input.composeFile || userCompose.findComposeFile(folder) || '');
+      const base = { name, stack, folder, composeFile, imported: true };
+      const read = await userCompose.readComposeConfig(base);
+      const composeSpec = { ...base, services: read.services, webService: read.webService, webPort: read.webPort };
+      projects.addSpec(composeSpec);
+      return { ...summarizeProject(composeSpec), warnings: read.warnings };
+    }
     const extraServices = normalizeExtraServices(input.extraServices);
     const dbName = normalizeDbName(input.dbName);
     const dbUser = normalizeDbUser(input.dbUser);
@@ -537,6 +676,7 @@ function registerIpcHandlers() {
   // everything is running, so Docker recreates what changed and removes what is gone.
   handle('project:start', async (name, options) => {
     const spec = requireSpec(name);
+    if (spec.stack === 'compose') return startComposeProject(spec, options);
     // `rebuild` builds the PHP image again from nothing (the Rebuild button). It always applies the project.
     const rebuild = Boolean(options) && options.rebuild === true;
     const apply = rebuild || (Boolean(options) && options.apply === true);
@@ -591,7 +731,7 @@ function registerIpcHandlers() {
     if (res.ok && spec.stack === 'laravel' && spec.vendorVolume === true) {
       // vendor/ is in a Docker volume: fill it the first time, and after composer.lock changed.
       report('up', null, 'Preparing the vendor volume');
-      const synced = await syncVendorVolume({ projectName: spec.name, folder: spec.folder, log });
+      const synced = await syncVendorVolume({ projectName: spec.name, folder: spec.folder, log, progress: (fraction, text) => report('up', fraction, text) });
       if (!synced.ok) {
         res.ok = false;
         res.stderr = `Vendor volume: ${synced.error}. Turn off "Keep vendor in a Docker volume" in the project's Settings tab to go back.`;
@@ -641,6 +781,151 @@ function registerIpcHandlers() {
   });
 
   // What the Edit services form shows for a project.
+  // ---------- Data tab: one place for every service that has a viewer (mail, key-value) ----------
+  // Which services have a viewer comes from the service catalog ("viewer" of the matching entry), so an extra
+  // service with the same image counts too. Every call names the service; it is checked against the project.
+
+  function pickViewerService(spec, wanted, viewer) {
+    const list = viewerServices(spec).filter((v) => v.viewer === viewer);
+    if (list.length === 0) {
+      const missing = {
+        mail: 'This project has no mail catcher. Tick Mailpit in the Settings tab.',
+        keyvalue: 'This project has no Redis. Tick Redis in the Settings tab.',
+        requests: 'This project has no API catcher. Add thiht/smocker as an extra service.',
+      };
+      throw new Error(missing[viewer] || 'Unknown service');
+    }
+    if (wanted === undefined || wanted === null || wanted === '') return list[0];
+    const hit = list.find((v) => v.service === wanted);
+    if (!hit) throw new Error('Unknown service');
+    return hit;
+  }
+
+  // Where to ask Mailpit: its published port 8025 on this computer, or inside its container when the port
+  // is not published (an extra service added without ports).
+  function mailTarget(spec, wanted) {
+    const svc = pickViewerService(spec, wanted, 'mail').service;
+    const hit = knownPorts(spec).find((p) => p.service === svc && p.container === 8025);
+    return hit ? { port: hit.host } : { container: naming.containerName(spec.name, svc) };
+  }
+
+  function redisSpec(name, wanted) {
+    const spec = requireSpec(name);
+    const picked = pickViewerService(spec, wanted, 'keyvalue');
+    const svc = picked.service;
+    // The built-in redis service uses the password saved for the project; an extra one its own environment.
+    const env = (configForPorts(spec).services.find((s) => s.name === svc) || {}).env || {};
+    const password = svc === 'redis' ? credentialsFor(spec).redis : (env.REDIS_PASSWORD || env.VALKEY_PASSWORD || '');
+    return { spec, target: { project: spec.name, service: svc }, password };
+  }
+
+  const serviceOf = (options) => (options && typeof options === 'object' ? options.service : undefined);
+
+  // Smocker's admin API: its published port 8081, or inside its container.
+  function requestsTarget(spec, wanted) {
+    const svc = pickViewerService(spec, wanted, 'requests').service;
+    const hit = knownPorts(spec).find((p) => p.service === svc && p.container === 8081);
+    return hit ? { port: hit.host } : { container: naming.containerName(spec.name, svc) };
+  }
+
+  // Where the app sends its API calls (port 8080), and the admin page (8081) when it is published.
+  handle('requests:info', (name, service) => {
+    const spec = requireSpec(name);
+    const svc = pickViewerService(spec, service, 'requests').service;
+    const ports = knownPorts(spec).filter((p) => p.service === svc);
+    const api = ports.find((p) => p.container === 8080);
+    const admin = ports.find((p) => p.container === 8081);
+    return { service: svc, apiPort: api ? api.host : null, adminPort: admin ? admin.host : null };
+  });
+  handle('requests:list', (name, service) => serviceData.listRequests(requestsTarget(requireSpec(name), service)));
+  handle('requests:reset', (name, service) => serviceData.resetRequests(requestsTarget(requireSpec(name), service)));
+  handle('requests:answerOk', (name, service) => serviceData.answerAllOk(requestsTarget(requireSpec(name), service)));
+
+  // How an app sends mail to this Mailpit: SMTP on port 1025, no user and no password.
+  handle('mail:info', (name, service) => {
+    const spec = requireSpec(name);
+    const svc = pickViewerService(spec, service, 'mail').service;
+    const ports = knownPorts(spec).filter((p) => p.service === svc);
+    const web = ports.find((p) => p.container === 8025);
+    const smtp = ports.find((p) => p.container === 1025);
+    return { service: svc, webPort: web ? web.host : null, smtpPort: smtp ? smtp.host : null };
+  });
+  handle('mail:list', (name, options) => serviceData.listMails(mailTarget(requireSpec(name), serviceOf(options)), options || {}));
+  handle('mail:read', (name, id, service) => serviceData.readMail(mailTarget(requireSpec(name), service), id));
+  handle('mail:delete', (name, ids, service) => serviceData.deleteMails(mailTarget(requireSpec(name), service), ids));
+  // How an app connects to this Redis: the service name inside Docker, the published port from this computer,
+  // and its password.
+  handle('redis:info', (name, service) => {
+    const { spec, target, password } = redisSpec(name, service);
+    const hit = knownPorts(spec).find((p) => p.service === target.service && p.container === 6379);
+    return { service: target.service, hostPort: hit ? hit.host : null, password, stack: spec.stack || '' };
+  });
+  handle('redis:overview', (name, service) => {
+    const { target, password } = redisSpec(name, service);
+    return serviceData.redisOverview(target, password);
+  });
+  handle('redis:keys', (name, options) => {
+    const { target, password } = redisSpec(name, serviceOf(options));
+    return serviceData.redisKeys(target, password, options || {});
+  });
+  handle('redis:value', (name, options) => {
+    const { target, password } = redisSpec(name, serviceOf(options));
+    return serviceData.redisValue(target, password, options || {});
+  });
+  handle('redis:delete', (name, options) => {
+    const { target, password } = redisSpec(name, serviceOf(options));
+    return serviceData.redisDelete(target, password, options || {});
+  });
+  handle('redis:flush', (name, options) => {
+    const { target, password } = redisSpec(name, serviceOf(options));
+    return serviceData.redisFlush(target, password, options || {});
+  });
+
+  // ---------- Choosing a host port by hand (Settings tab > Ports) ----------
+
+  // Everything checkHostPort needs to know about one project and the rest of the computer.
+  async function portFacts(spec, service, container, port) {
+    const ownPorts = knownPorts(spec);
+    const running = await isProjectRunning(spec.name);
+    const otherProjects = new Map();
+    for (const other of projects.listSpecs()) {
+      if (other.name === spec.name) continue;
+      for (const p of knownPorts(other)) {
+        if (!otherProjects.has(p.host)) otherProjects.set(p.host, { project: other.name, service: p.service });
+      }
+    }
+    return {
+      port,
+      service,
+      container: Number(container),
+      ownPorts,
+      ownRunning: running ? ownedHostPorts(spec) : new Set(),
+      otherProjects,
+      dockerOwners: await dockerHostPorts(spec.name),
+      isPortFree,
+    };
+  }
+
+  handle('project:checkPort', async (name, service, container, port) => {
+    const spec = requireSpec(name);
+    return checkHostPort(await portFacts(spec, service, container, port));
+  });
+
+  // Saves the port for the next start. A running project keeps its old port until it is restarted.
+  handle('project:setPort', async (name, service, container, port) => {
+    const spec = requireSpec(name);
+    if (spec.stack === 'compose') throw new Error(`This project uses your own ${spec.composeFile}. Change the port there.`);
+    const answer = await checkHostPort(await portFacts(spec, service, container, port));
+    if (!answer.ok || answer.same) return answer;
+    const saved = { ...toSavedPorts(knownPorts(spec)), ...(spec.hostPorts || {}) };
+    saved[`${service}:${Number(container)}`] = answer.port;
+    projects.setHostPorts(spec.name, saved);
+    const running = await isProjectRunning(spec.name);
+    // A stopped project shows the new port at once; a running one keeps showing the port it really uses.
+    if (!running) projects.clearAssignments(spec.name);
+    return { ...answer, saved: true, running };
+  });
+
   handle('project:details', async (name) => {
     const spec = requireSpec(name);
     return { ...describeForEdit(spec), running: await isProjectRunning(spec.name) };
@@ -700,6 +985,13 @@ function registerIpcHandlers() {
 
     // If Docker cannot remove the containers, keep the project so the user can try again.
     const keepData = Boolean(options && options.keepData === true);
+    if (spec.stack === 'compose') {
+      // Compose removes what the user's file made: containers, networks, and its volumes unless the data is kept.
+      const override = userCompose.overridePath(dataDir(), spec.name);
+      const args = [...userCompose.composeArgsFor(spec, fs.existsSync(override) ? override : null), 'down', '--remove-orphans'];
+      if (!keepData) args.push('-v');
+      if (fs.existsSync(userCompose.composeFilePath(spec))) await runDocker(args, { timeout: 180000 });
+    }
     const res = await removeProject(spec.name, { keepData });
     if (!res.ok) {
       return res;
@@ -733,17 +1025,21 @@ function registerIpcHandlers() {
     const target = service === undefined || service === null ? mainWebService(spec) : service;
 
     const isMain = target === mainWebService(spec);
-    if (typeof target !== 'string' || !(isMain || Object.hasOwn(OPENABLE, target))) {
+    // Mailpit added as an extra service (another name, same image) opens its page like the built-in one.
+    const isMail = typeof target === 'string' && target === mailServiceOf(configForPorts(spec));
+    if (typeof target !== 'string' || !(isMain || isMail || Object.hasOwn(OPENABLE, target))) {
       throw new Error('Unknown service');
     }
     if (!(await isProjectRunning(spec.name))) {
       throw new Error('Start the project first');
     }
 
-    const containerPort = isMain ? mainWebPort(spec) : OPENABLE[target];
+    const containerPort = isMain ? mainWebPort(spec) : isMail ? 8025 : OPENABLE[target];
     const web = knownPorts(spec).find((p) => p.service === target && p.container === containerPort);
     if (!web) {
-      throw new Error('This project has no such page');
+      throw new Error(isMail
+        ? `${target} has no port on this computer, so its page cannot open in the browser. Add port 8025 to ${target} in the Settings tab (Extra services), or tick the built-in Mailpit. The Mail tab works without it.`
+        : 'This project has no such page');
     }
 
     // The URL is built here from a port number. The renderer cannot pass a URL.
@@ -822,6 +1118,13 @@ function registerIpcHandlers() {
 
   // Live numbers for the details page. Only the project name is sent; the service is checked by openShell.
   handle('project:stats', (name) => projectStats(requireSpec(name).name));
+  // "Why?" for one service: state, exit code, health and the last log lines, explained.
+  handle('container:why', (name, service) => diagnoseContainer(requireSpec(name).name, service));
+  // Disk use and cleanup of the whole Docker engine.
+  handle('system:diskUsage', () => cleanup.diskUsage());
+  handle('system:unusedVolumes', () => cleanup.unusedVolumes());
+  handle('system:prune', (kind) => cleanup.prune(kind));
+  handle('system:removeVolumes', (names) => cleanup.removeVolumes(names));
   handle('project:disk', (name) => projectDisk(requireSpec(name).name));
   // The Volumes tab: every Docker volume of the project, and the folders shared from this computer.
   // The sizes are not here: `docker system df` can take many seconds, so the window asks for them
@@ -871,7 +1174,10 @@ function registerIpcHandlers() {
   handle('project:connectionData', (name) => {
     const spec = requireSpec(name);
     const creds = credentialsFor(spec);
+    // Extra services get their credentials and .env lines from the service catalog.
+    const services = catalog.loadCatalog(catalogFile());
     return {
+      catalogError: services.error,
       ...connectionData({
         config: buildProject(spec, creds.root),
         ports: knownPorts(spec),
@@ -881,6 +1187,7 @@ function registerIpcHandlers() {
         dbUser: creds.user,
         redisPassword: creds.redis,
         mail: spec.mail,
+        describe: (facts) => catalog.describeService(services.entries, facts),
       }),
       // For the "Slow on Windows?" tip in the Credentials tab.
       folder: spec.folder || '',
@@ -1132,6 +1439,12 @@ function createWindow() {
 
   // Block navigation away from the app page and block new windows.
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+  // The Mail tab shows a mail in a sandboxed frame from Mailpit on this computer. Links in a mail must not
+  // take that frame to other sites.
+  mainWindow.webContents.on('will-frame-navigate', (details) => {
+    if (details.isMainFrame) return;
+    if (!/^http:\/\/127\.0\.0\.1:\d{1,5}\/view\/[A-Za-z0-9_-]+\.html$/.test(details.url)) details.preventDefault();
+  });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   // The close button hides the window to the tray. The containers, Docker events and the tray stay.

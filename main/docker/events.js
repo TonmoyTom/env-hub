@@ -4,7 +4,7 @@ const { LABELS, MANAGED_FILTER } = require('../naming');
 const { spawn } = require('child_process');
 
 const WATCHED_ACTIONS = new Set([
-  'create', 'start', 'stop', 'die', 'kill', 'restart', 'pause', 'unpause', 'destroy',
+  'create', 'start', 'stop', 'die', 'kill', 'restart', 'pause', 'unpause', 'destroy', 'healthy', 'unhealthy',
 ]);
 
 const RESTART_AFTER_MS = 3000;
@@ -34,7 +34,11 @@ function startEvents(onChange, onError, onState, spawnFn = spawn) {
       return;
     }
 
-    const action = event.Action || event.status;
+    let action = String(event.Action || event.status || '');
+    // "health_status: unhealthy" -> unhealthy / healthy. Other health events are skipped.
+    if (action.startsWith('health_status')) {
+      action = /unhealthy/.test(action) ? 'unhealthy' : /healthy/.test(action) ? 'healthy' : '';
+    }
     if (!WATCHED_ACTIONS.has(action)) return;
 
     const attrs = (event.Actor && event.Actor.Attributes) || {};
@@ -44,6 +48,8 @@ function startEvents(onChange, onError, onState, spawnFn = spawn) {
       name: attrs.name || null,
       project: attrs[LABELS.project] || null,
       service: attrs[LABELS.service] || null,
+      // Only on die: how the program ended (0 = normally).
+      exitCode: attrs.exitCode !== undefined ? Number(attrs.exitCode) : null,
     });
   }
 

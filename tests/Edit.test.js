@@ -131,6 +131,16 @@ test('the form text of an extra service goes back in unchanged', () => {
   assert.deepEqual(again.extraServices, spec.extraServices);
 });
 
+test('a quoted start command stays one argument, and survives the edit form', () => {
+  const text = 'sh -c "grep -q \'^\\.\\*\' /etc/h || echo \'.*:21::\' >> /etc/h; faxq; exec hfaxd -d -i 4559"';
+  const spec = nestSpec({ extraServices: normalizeExtraServices([{ image: 'neoseason/hylafax:nocfg', ports: '', env: '', command: text }]) });
+  assert.deepEqual(spec.extraServices[0].command, ['sh', '-c', "grep -q '^\\.\\*' /etc/h || echo '.*:21::' >> /etc/h; faxq; exec hfaxd -d -i 4559"]);
+  const details = describeForEdit(spec);
+  const again = applyServiceEdit(spec, { options: details.options, extraServices: details.extras });
+  assert.deepEqual(again.extraServices, spec.extraServices);
+  assert.throws(() => normalizeExtraServices([{ image: 'a/x:1', command: 'sh -c "open' }]), /quote is not closed/);
+});
+
 test('the demo project and unknown stacks cannot be edited', () => {
   const demo = { name: 'demo', stack: 'custom', services: [] };
   assert.equal(isEditable(demo), false);

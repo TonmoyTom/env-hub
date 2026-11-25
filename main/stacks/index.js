@@ -12,6 +12,7 @@ const CREATABLE_STACKS = ['laravel', ...NODE_STACKS, 'docker'];
 const NAMES = {
   laravel: 'Laravel',
   docker: 'Docker image',
+  compose: 'Compose',
   ...Object.fromEntries(NODE_STACKS.map((key) => [key, NODE_STACK_DEFS[key].label])),
 };
 
@@ -62,18 +63,22 @@ function stackLabel(spec) {
   if (spec.stack === 'laravel' && spec.phpVersion) return `${name} · PHP ${spec.phpVersion}`;
   if (NODE_STACKS.includes(spec.stack) && spec.nodeVersion) return `${name} · Node ${spec.nodeVersion}`;
   if (spec.stack === 'docker' && spec.image) return `${name} · ${spec.image}`;
+  if (spec.stack === 'compose' && spec.composeFile) return `${name} · ${spec.composeFile}`;
   return name;
 }
 
 // The service the Open button shows in the browser.
 function mainWebService(spec) {
   if (spec.stack === 'docker') return 'app';
+  // Picked from the compose file's ports when it was read (the service with port 80, 8080, 3000 ...).
+  if (spec.stack === 'compose') return spec.webService || '';
   return NODE_STACKS.includes(spec.stack) ? 'node' : 'nginx';
 }
 
 // The container port of that service's web page.
 function mainWebPort(spec) {
   if (spec.stack === 'docker') return Number(spec.containerPort);
+  if (spec.stack === 'compose') return Number(spec.webPort) || null;
   if (NODE_STACKS.includes(spec.stack)) return NODE_STACK_DEFS[spec.stack].port;
   return 80;
 }

@@ -2,6 +2,7 @@
 
 const { lockFileName, containerName, volumeName, phpImage } = require('../naming');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { runDocker, streamDocker } = require('../docker/exec');
@@ -41,8 +42,116 @@ function vendorPlan({ hasAutoload, stamp, lock, hostHasVendor }) {
   return 'none';
 }
 
+// Size of a folder in bytes and files. Used for the "Copied 120 MB of 310 MB" line.
+async function folderSize(dir) {
+  let bytes = 0;
+  let files = 0;
+  const stack = [dir];
+  while (stack.length) {
+    const current = stack.pop();
+    let entries;
+    try {
+      entries = await fs.promises.readdir(current, { withFileTypes: true });
+    } catch (err) {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(full);
+      } else if (entry.isFile()) {
+        files += 1;
+        try {
+          bytes += (await fs.promises.stat(full)).size;
+        } catch (err) {
+          // A file that went away while counting.
+        }
+      }
+    }
+  }
+  return { bytes, files };
+}
+
+function mb(bytes) {
+  return `${Math.round(bytes / 1e6)} MB`;
+}
+
+// The fast way to fill the volume: this computer packs vendor/ with tar (built into Windows 10+, Mac and
+// Linux) and streams it into a container that unpacks it into the volume. A shared folder is read file by file
+// (slow on Windows and Mac: tens of thousands of files); one stream is many times faster.
+// Resolves { ok, error? }. `progress(fraction, text)` gets called about once a second.
+function copyVendorWithTar({ hostVendor, volume, image, log, progress, total, spawnFn = spawn, timeout = LONG_TIMEOUT_MS }) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let sent = 0;
+    const errors = [];
+    // tar adds a header of 512 bytes (and padding) per file, so the stream is a bit bigger than the files.
+    const expected = Math.max(1, total.bytes + total.files * 1024);
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(ticker);
+      clearTimeout(timer);
+      resolve(result);
+    };
+
+    const pack = spawnFn('tar', ['-cf', '-', '-C', hostVendor, '.'], { windowsHide: true });
+    const unpack = spawnFn('docker', [
+      'run', '--rm', '-i',
+      '--mount', `type=volume,source=${volume},target=/dst`,
+      '--entrypoint', 'sh', image, '-c', 'tar -xf - -C /dst',
+    ], { windowsHide: true });
+
+    const timer = setTimeout(() => {
+      pack.kill();
+      unpack.kill();
+      finish({ ok: false, error: 'took too long' });
+    }, timeout);
+
+    const ticker = setInterval(() => {
+      const fraction = Math.min(0.99, sent / expected);
+      const text = `Copying vendor into the volume: ${mb(sent)} of about ${mb(expected)} (${Math.round(fraction * 100)}%)`;
+      log(text);
+      if (progress) progress(fraction, text);
+    }, 1500);
+
+    pack.on('error', (err) => finish({ ok: false, error: `tar could not start: ${err.message}` }));
+    unpack.on('error', (err) => finish({ ok: false, error: `docker could not start: ${err.message}` }));
+    pack.stderr.on('data', (chunk) => errors.push(String(chunk).trim()));
+    unpack.stderr.on('data', (chunk) => errors.push(String(chunk).trim()));
+    pack.stdout.on('data', (chunk) => {
+      sent += chunk.length;
+    });
+    pack.stdout.pipe(unpack.stdin);
+    // A closed stdin on the docker side (it failed) must not crash the app.
+    unpack.stdin.on('error', () => {});
+
+    // Both programs must end well. Their "close" events can come in either order.
+    let packCode;
+    let unpackCode;
+    const judge = () => {
+      if (packCode === undefined || unpackCode === undefined) return;
+      if (packCode === 0 && unpackCode === 0) {
+        if (progress) progress(1, `Copied ${mb(sent)} of vendor into the volume`);
+        finish({ ok: true });
+      } else {
+        finish({ ok: false, error: errors.filter(Boolean).slice(-2).join(' | ') || `tar exit ${packCode}, docker exit ${unpackCode}` });
+      }
+    };
+    pack.on('close', (code) => {
+      packCode = code;
+      judge();
+    });
+    unpack.on('close', (code) => {
+      unpackCode = code;
+      judge();
+    });
+  });
+}
+
 // Fills or updates the vendor volume of a running project. Resolves { ok, action, error? }.
-async function syncVendorVolume({ projectName, folder, log = () => {}, run = runDocker, stream = streamDocker }) {
+// `progress(fraction, text)` (optional) moves the progress bar while vendor is copied.
+async function syncVendorVolume({ projectName, folder, log = () => {}, progress = null, run = runDocker, stream = streamDocker, spawnFn = spawn }) {
   const container = containerName(projectName, 'php');
   const volume = volumeName(projectName, 'php', VENDOR_VOLUME);
   const image = phpImage(projectName);
@@ -67,13 +176,22 @@ async function syncVendorVolume({ projectName, folder, log = () => {}, run = run
 
   let res;
   if (action === 'copy') {
-    log('Copying the vendor folder into a Docker volume. This is done once and can take a few minutes');
-    res = await stream([
-      'run', '--rm',
-      '--mount', `type=bind,source=${hostVendor},target=/src,readonly`,
-      '--mount', `type=volume,source=${volume},target=/dst`,
-      '--entrypoint', 'sh', image, '-c', 'cp -a /src/. /dst/',
-    ], log, { timeout: LONG_TIMEOUT_MS });
+    log('Copying the vendor folder into a Docker volume. This is done once');
+    const total = await folderSize(hostVendor);
+    log(`vendor has ${total.files} files, ${mb(total.bytes)}`);
+    const fast = await copyVendorWithTar({ hostVendor, volume, image, log, progress, total, spawnFn });
+    if (fast.ok) {
+      res = { ok: true };
+    } else {
+      // No tar on this computer, or the stream failed: the slower copy through the shared folder.
+      log(`The fast copy did not work (${fast.error}). Copying file by file, this can take several minutes`);
+      res = await stream([
+        'run', '--rm',
+        '--mount', `type=bind,source=${hostVendor},target=/src,readonly`,
+        '--mount', `type=volume,source=${volume},target=/dst`,
+        '--entrypoint', 'sh', image, '-c', 'cp -a /src/. /dst/',
+      ], log, { timeout: LONG_TIMEOUT_MS });
+    }
   } else {
     log('Installing the PHP packages into the vendor volume (composer install)');
     res = await stream([
@@ -93,4 +211,4 @@ async function syncVendorVolume({ projectName, folder, log = () => {}, run = run
   return { ok: true, action };
 }
 
-module.exports = { syncVendorVolume, vendorPlan, lockHash, VENDOR_TARGET, VENDOR_VOLUME, STAMP_FILE };
+module.exports = { syncVendorVolume, vendorPlan, lockHash, folderSize, copyVendorWithTar, VENDOR_TARGET, VENDOR_VOLUME, STAMP_FILE };

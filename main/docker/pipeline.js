@@ -212,10 +212,11 @@ async function buildImages(composeArgs, report, log = () => {}, { noCache = fals
 // Downloads and builds what is missing, then starts the containers.
 // `report(step, fraction, detail)` is called as the work moves on. fraction is 0 to 1 or null.
 // Resolves like runDocker: { ok, stdout, stderr }.
-async function setupProject({ composeFile, projectName, config, report, log = () => {}, rebuild = false }) {
-  const composeArgs = ['compose', '-f', composeFile, '-p', composeProject(projectName)];
+// `composeArgs` replaces the default `compose -f <file> -p <project>` (a project with the user's own compose file).
+async function setupProject({ composeFile, composeArgs: givenArgs, projectName, config, report, log = () => {}, rebuild = false }) {
+  const composeArgs = givenArgs || ['compose', '-f', composeFile, '-p', composeProject(projectName)];
 
-  const images = [...new Set(config.services.filter((s) => !s.build).map((s) => s.image))];
+  const images = [...new Set(config.services.filter((s) => !s.build && s.image).map((s) => s.image))];
   report('pull', 0, 'Checking which images are on this computer');
   const pulled = await pullImages(images, report, log);
   if (!pulled.ok) return pulled;

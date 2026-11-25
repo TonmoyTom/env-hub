@@ -5,6 +5,7 @@ const { packageRule } = require('./docker');
 const { normalizeOptions } = require('./laravel');
 const { normalizeNodeOptions } = require('./node');
 const { normalizeExtraServices, MAX_EXTRAS } = require('./extras');
+const { commandText } = require('./links');
 const registry = require('../registry/versions');
 const { extensionList, normalizeExtensions, normalizePhpIni } = require('./php-extensions');
 const { normalizeDbName, dbNameOf, normalizeDbUser, dbUserOf, normalizePassword, normalizeMail } = require('./services');
@@ -76,7 +77,7 @@ function describeForEdit(spec, platform = process.platform) {
       image: extra.image,
       ports: (extra.ports || []).join(','),
       env: envText(extra.env),
-      command: (extra.command || []).join(' '),
+      command: commandText(extra.command || []),
     })),
     maxExtras: MAX_EXTRAS,
   };

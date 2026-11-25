@@ -7,7 +7,7 @@
   "main": "main/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test tests/compose.test.js tests/ports.test.js tests/laravel.test.js tests/Portcheck.test.js tests/Store.test.js tests/Stacks.test.js tests/Pipeline.test.js tests/Hub.test.js tests/Folders.test.js tests/Edit.test.js tests/Links.test.js tests/Dbname.test.js tests/Credentials.test.js tests/Volumes.test.js tests/Envfile.test.js tests/Missing.test.js tests/Lan.test.js tests/Versions.test.js tests/Portable.test.js tests/Installer.test.js tests/Stats.test.js tests/PhpSettings.test.js tests/Diagnose.test.js tests/Desktop.test.js tests/VendorVolume.test.js tests/DockerFiles.test.js",
+    "test": "node --test tests/compose.test.js tests/ports.test.js tests/laravel.test.js tests/Portcheck.test.js tests/Store.test.js tests/Stacks.test.js tests/Pipeline.test.js tests/Hub.test.js tests/Folders.test.js tests/Edit.test.js tests/Links.test.js tests/Dbname.test.js tests/Credentials.test.js tests/Volumes.test.js tests/Envfile.test.js tests/Missing.test.js tests/Lan.test.js tests/Versions.test.js tests/Portable.test.js tests/Installer.test.js tests/Stats.test.js tests/PhpSettings.test.js tests/Diagnose.test.js tests/Desktop.test.js tests/VendorVolume.test.js tests/DockerFiles.test.js tests/PortChoice.test.js tests/ServiceData.test.js tests/Catalog.test.js tests/Health.test.js tests/Cleanup.test.js tests/UserCompose.test.js",
     "dist": "electron-builder --win --publish never",
     "art": "electron scripts/make-brand-assets.js",
     "build:windows": "electron-builder --win --publish never",

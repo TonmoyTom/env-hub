@@ -4435,6 +4435,732 @@ button.notif-project:hover:not(:disabled) {
   color: var(--muted);
 }
 
+/* ---------- Settings tab: Ports ---------- */
+
+.port-edit-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.port-edit {
+  display: grid;
+  grid-template-columns: 120px auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--row-border);
+}
+
+.port-edit:last-child {
+  border-bottom: 0;
+}
+
+.port-edit-svc {
+  font-weight: 600;
+}
+
+.port-edit-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.settings-tab .port-edit-field input[type="text"] {
+  width: 78px;
+  min-height: 34px;
+  height: 34px;
+  padding: 0 8px;
+  text-align: center;
+}
+
+.port-edit-status {
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.port-edit-status.ok {
+  color: var(--ok);
+}
+
+.port-edit-status.bad {
+  color: var(--danger);
+}
+
+#edit-ports-note {
+  margin-top: 12px;
+  align-items: center;
+}
+
+#edit-ports-note .port-apply {
+  flex: none;
+}
+
+@media (max-width: 760px) {
+  .port-edit {
+    grid-template-columns: 1fr auto;
+  }
+}
+
+/* ---------- Mail and Redis tabs ---------- */
+
+.mailview[hidden],
+.redisview[hidden] {
+  display: none;
+}
+
+.mailview > .note-line,
+.redisview > .note-line {
+  margin: 12px 16px 0;
+}
+
+.split-view {
+  display: grid;
+  grid-template-columns: minmax(260px, 380px) minmax(0, 1fr);
+  min-height: 520px;
+  max-height: calc(100vh - 280px);
+}
+
+.redisview .split-view {
+  grid-template-columns: minmax(300px, 460px) minmax(0, 1fr);
+}
+
+.mail-list,
+.redis-keys {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+
+.mail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 11px 14px 11px 18px;
+  border-bottom: 1px solid var(--row-border);
+  cursor: pointer;
+  position: relative;
+}
+
+.mail-item:hover {
+  background: var(--hover);
+}
+
+.mail-item.on {
+  background: var(--selected-row);
+}
+
+.mail-item.unread::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 17px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2f6fed;
+}
+
+.mail-item.unread .mail-from,
+.mail-item.unread .mail-subject {
+  font-weight: 700;
+}
+
+.mail-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mail-from {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.mail-time {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.mail-subject {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mail-snippet {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mail-empty,
+.detail-empty {
+  margin: 0;
+  padding: 28px 18px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.mail-detail,
+.redis-value {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: auto;
+}
+
+.mail-head,
+.value-head {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mail-head h3,
+.value-head h3 {
+  margin: 0;
+  padding-right: 90px;
+  font-size: 16px;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.value-head h3 {
+  font-size: 14px;
+}
+
+.mail-head dl.kv {
+  padding: 0;
+}
+
+.mail-head dl.kv dt,
+.mail-head dl.kv dd {
+  padding: 4px 0;
+  border: 0;
+}
+
+.mail-head dl.kv {
+  grid-template-columns: 60px minmax(0, 1fr);
+}
+
+.mail-head dl.kv dd {
+  text-align: left;
+}
+
+.mail-head .seg {
+  align-self: flex-start;
+}
+
+.mail-delete {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+}
+
+.mail-files {
+  margin: 0;
+}
+
+.mail-view {
+  flex: 1;
+  min-height: 360px;
+  display: flex;
+}
+
+.mail-view iframe {
+  flex: 1;
+  width: 100%;
+  min-height: 360px;
+  border: 0;
+  background: #ffffff;
+}
+
+.mail-text {
+  flex: 1;
+  margin: 0;
+  padding: 14px 16px;
+  background: var(--subtle);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.dtable.mini.redis-table,
+.dtable.mini.value-table {
+  min-width: 0;
+}
+
+.redis-table td.mono.muted {
+  white-space: nowrap;
+}
+
+.dtable.mini.redis-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.mail-clip {
+  display: inline-flex;
+  vertical-align: -2px;
+  margin-right: 4px;
+  color: var(--muted);
+}
+
+.redis-table th:nth-child(2) {
+  width: 78px;
+}
+
+.redis-table th:nth-child(3) {
+  width: 92px;
+}
+
+.mail-clip {
+  display: inline-flex;
+  vertical-align: -2px;
+  margin-right: 4px;
+  color: var(--muted);
+}
+
+.redis-table td.redis-key {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.redis-table tr.trow {
+  cursor: pointer;
+}
+
+.redis-more {
+  margin: 10px 16px;
+}
+
+.type-tag {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: var(--chip-bg);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-2);
+}
+
+.type-string { background: var(--tone-blue-bg); color: var(--link); }
+.type-hash { background: var(--tone-amber-bg); color: var(--warn); }
+.type-list { background: var(--ok-bg); color: var(--ok); }
+.type-set,
+.type-zset { background: var(--tone-teal-bg); color: var(--eyebrow); }
+
+.value-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.value-actions {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  display: flex;
+  gap: 6px;
+}
+
+
+.value-table td {
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  vertical-align: top;
+}
+
+.value-text {
+  min-height: 300px;
+}
+
+@media (max-width: 900px) {
+  .split-view,
+  .redisview .split-view {
+    grid-template-columns: minmax(0, 1fr);
+    max-height: none;
+  }
+
+  .mail-list,
+  .redis-keys {
+    max-height: 300px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+/* ---------- Progress panel: minimize ---------- */
+
+.progress-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.progress-head .progress-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.progress-percent {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+button.progress-min {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* Minimized: title, percent and the bar only. */
+.progress-mini .progress-detail,
+.progress-mini .progress-time,
+.progress-mini .log-toggle,
+.progress-mini .terminal,
+.progress-mini .steps {
+  display: none !important;
+}
+
+.progress-mini .track {
+  margin-bottom: 2px;
+}
+
+/* ---------- Mail tab: connect your app ---------- */
+
+.mail-connect {
+  border-bottom: 1px solid var(--border);
+}
+
+.mail-connect summary {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mail-connect summary .muted {
+  font-weight: 400;
+}
+
+.mail-connect-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 16px 14px;
+}
+
+.mail-connect-body .seg {
+  align-self: flex-start;
+}
+
+.mail-connect-body .seg button {
+  height: 30px;
+  min-height: 30px;
+  font-size: 12px;
+}
+
+.mail-connect-body p {
+  margin: 0;
+}
+
+.mail-connect-body .env-block[hidden] {
+  display: none;
+}
+
+/* ---------- Credentials: cards from the service catalog ---------- */
+
+.catalog-card .catalog-note {
+  margin: 8px 16px 0;
+}
+
+.catalog-note[hidden] {
+  display: none;
+}
+
+.catalog-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 12px 16px 0;
+}
+
+.catalog-tools .seg button {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.catalog-tools .seg button[aria-pressed="true"],
+.catalog-tools .seg button[aria-pressed="true"]:hover {
+  background: var(--active-bg);
+  color: var(--link-strong);
+  box-shadow: none;
+}
+
+pre.catalog-env {
+  margin: 8px 16px 4px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #e6eaf0;
+}
+
+pre.catalog-env[hidden] {
+  display: none;
+}
+
+.catalog-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 16px 4px;
+}
+
+/* ---------- Data tab: services on the left, the viewer on the right ---------- */
+
+.dataview[hidden] {
+  display: none;
+}
+
+.data-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  min-height: 560px;
+}
+
+.data-services {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 8px;
+  border-right: 1px solid var(--border);
+  background: var(--subtle);
+}
+
+.data-services-title {
+  padding: 2px 8px 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+#dv-services {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+button.data-service {
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  height: auto;
+  min-height: 48px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  font-weight: 400;
+}
+
+button.data-service:hover:not(:disabled) {
+  background: var(--hover-bg);
+}
+
+button.data-service[aria-pressed="true"],
+button.data-service[aria-pressed="true"]:hover {
+  background: var(--active-bg);
+}
+
+.data-service-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  background: var(--tone-blue-bg);
+  color: var(--link);
+}
+
+.data-service-icon.viewer-keyvalue {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.data-service-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.data-service-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.data-service[aria-pressed="true"] .data-service-name {
+  color: var(--link);
+}
+
+.data-service-kind {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.data-body {
+  min-width: 0;
+}
+
+/* The viewers sit inside the Data tab, without a second border. */
+.data-body > .panel {
+  border: 0;
+  border-radius: 0;
+}
+
+@media (max-width: 900px) {
+  .data-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .data-services {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  #dv-services {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  button.data-service {
+    width: auto;
+  }
+}
+
+/* ---------- Data tab: Requests viewer (Smocker) ---------- */
+
+.reqview[hidden] {
+  display: none;
+}
+
+.reqview > .note-line {
+  margin: 12px 16px 0;
+}
+
+.req-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.req-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.method-tag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--chip-bg);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--fg-2);
+}
+
+.method-post { background: var(--ok-bg); color: var(--ok); }
+.method-get { background: var(--tone-blue-bg); color: var(--link); }
+.method-put,
+.method-patch { background: var(--tone-amber-bg); color: var(--warn); }
+.method-delete { background: var(--danger-bg); color: var(--danger); }
+
+.req-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.req-title .mono {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.req-section {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+
+.req-section h4.panel-title {
+  margin: 0;
+  padding: 10px 16px 6px;
+}
+
+.req-section .mail-text {
+  flex: none;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.data-service-icon.viewer-requests {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
 /* ---------- Narrow windows ---------- */
 
 /* The old layout turned the sidebar into icons below 1000px. Keep the labels down to 860px
@@ -4518,4 +5244,279 @@ button.notif-project:hover:not(:disabled) {
   .summary-strip {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* ---------- Container health and "Why?" ---------- */
+
+.st-error {
+  color: var(--danger);
+}
+
+.st-error .st-dot {
+  background: var(--danger);
+}
+
+.hbars span.bad {
+  background: var(--danger);
+}
+
+.c-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.why-btn {
+  padding: 1px 8px;
+  min-height: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.why-btn:hover,
+.why-btn:focus-visible {
+  border-color: var(--danger);
+}
+
+.modal.modal-wide {
+  width: min(680px, 100%);
+}
+
+#why-modal .modal-actions {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.why-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.why-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--subtle);
+}
+
+.why-icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--dim);
+}
+
+.why-error .why-icon { background: var(--danger); }
+.why-warn .why-icon { background: var(--warn); color: #1a1405; }
+.why-ok .why-icon { background: var(--ok-dot); }
+.why-error { border-color: var(--danger-border); background: var(--danger-bg); }
+
+.why-text p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg);
+}
+
+.why-text .why-fix {
+  margin-top: 3px;
+  color: var(--fg-2);
+}
+
+.why-text .why-fix::before {
+  content: "→ ";
+  color: var(--muted);
+}
+
+#why-body .panel-title {
+  margin: 16px 0 6px;
+}
+
+.why-logs {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  font: 11.5px/1.55 var(--mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #c9d3e0;
+  background: #07090d;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* ---------- Disk & cleanup ---------- */
+
+.du-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 1180px) {
+  .du-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.du-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.du-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.du-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.du-size {
+  font: 600 20px/1.2 var(--mono);
+  color: var(--fg);
+}
+
+.du-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.du-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--warn);
+}
+
+.du-card p {
+  margin: 0;
+}
+
+.du-free {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-2);
+}
+
+.du-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.du-sub {
+  margin: 2px 0 0;
+  max-width: 640px;
+}
+
+#cleanup-card .panel {
+  margin-top: 16px;
+}
+
+#cleanup-card .summary-strip,
+#cleanup-card #cleanup-note {
+  margin-bottom: 14px;
+}
+
+.vtable .vol-name {
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vtable .num,
+.vtable th.num {
+  text-align: right;
+}
+
+.warn-text {
+  color: var(--warn);
+}
+
+/* Progress of one cleanup, in place of the card's buttons. */
+.du-card.du-working {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.du-progress {
+  margin-top: auto;
+  padding-top: 6px;
+}
+
+.du-ptrack {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.du-ptrack span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.6s ease;
+}
+
+.du-ptrack.indeterminate span {
+  position: absolute;
+  width: 35%;
+  animation: du-slide 1.3s ease-in-out infinite;
+}
+
+@keyframes du-slide {
+  from { left: -35%; }
+  to { left: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .du-ptrack.indeterminate span {
+    animation: none;
+    left: 0;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
+.du-ptext {
+  margin: 6px 0 0;
+  font: 12px/1.4 var(--mono);
+  color: var(--fg-2);
 }
